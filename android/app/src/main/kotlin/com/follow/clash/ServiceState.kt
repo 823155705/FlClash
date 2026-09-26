@@ -1,6 +1,7 @@
 package com.follow.clash
 
 import com.follow.clash.models.SharedState
+import com.follow.clash.plugins.WidgetPlugin
 import io.flutter.embedding.engine.FlutterEngine
 import kotlinx.coroutines.Deferred
 
@@ -30,6 +31,8 @@ object ServiceState {
     fun requestStop(): Deferred<Boolean> = machine.requestStop()
 
     fun syncSharedState(state: SharedState) = machine.syncSharedState(state)
+
+    fun widgetPlugin(): WidgetPlugin? = AndroidServiceStateHost.widget()
 
     internal fun captureRequestToken(): RunRequest = machine.captureRequestToken()
 

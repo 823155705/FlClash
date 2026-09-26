@@ -5,6 +5,7 @@ import com.follow.clash.common.GlobalState
 import com.follow.clash.models.SharedState
 import com.follow.clash.plugins.AppPlugin
 import com.follow.clash.plugins.TilePlugin
+import com.follow.clash.plugins.WidgetPlugin
 import com.follow.clash.service.ServiceConfig
 import com.follow.clash.service.models.NotificationParams
 import com.follow.clash.service.models.VpnOptions
@@ -36,6 +37,8 @@ internal interface ServiceStateHost {
     fun tile(): TileGateway?
 
     fun app(): AppGateway?
+
+    fun widget(): WidgetPlugin?
 
     suspend fun quickSetup(initParams: String, setupParams: String): Result<String>
 
@@ -120,6 +123,8 @@ internal object AndroidServiceStateHost : ServiceStateHost {
                 plugin.cancelVpnPreparation(callback)
         }
     }
+
+    override fun widget(): WidgetPlugin? = flutterEngine?.plugin<WidgetPlugin>()
 
     override suspend fun quickSetup(initParams: String, setupParams: String): Result<String> =
         ServiceController.quickSetup(initParams, setupParams)

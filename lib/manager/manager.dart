@@ -9,4 +9,5 @@ export 'theme_manager.dart';
 export 'tile_manager.dart';
 export 'tray_manager.dart';
 export 'vpn_manager.dart';
+export 'widget_manager.dart';
 export 'window_manager.dart';

@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="10dp"
+    android:clipToPadding="false"
+    android:background="@drawable/widget_bg">
+
+    <!-- Status Row -->
+    <LinearLayout
+        android:id="@+id/status_row"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="@drawable/widget_ripple">
+
+        <TextView
+            android:id="@+id/status_icon"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/status_dot"
+            android:importantForAccessibility="no" />
+
+        <TextView
+            android:id="@+id/status_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Running"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/black" />
+
+        <ImageButton
+            android:id="@+id/toggle_button"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:src="@drawable/ic_power"
+            android:scaleType="fitCenter"
+            android:background="@android:color/transparent"
+            android:contentDescription="Toggle"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <!-- Traffic Row -->
+    <LinearLayout
+        android:id="@+id/traffic_container"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <ImageView
+            android:id="@+id/traffic_chart"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:scaleType="fitXY"
+            android:importantForAccessibility="no" />
+
+        <TextView
+            android:id="@+id/traffic_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="↓ 0 B/s  ↑ 0 B/s"
+            android:textSize="9sp"
+            android:textColor="#8A000000"
+            android:gravity="center"
+            android:paddingBottom="1dp" />
+    </LinearLayout>
+
+    <!-- Divider -->
+    <TextView
+        android:id="@+id/divider1"
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:background="#1A000000"
+        android:importantForAccessibility="no" />
+
+    <!-- Mode Row -->
+    <LinearLayout
+        android:id="@+id/mode_row"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="@drawable/widget_ripple">
+
+        <TextView
+            android:id="@+id/mode_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Mode"
+            android:textSize="10sp"
+            android:textColor="#8A000000" />
+
+        <TextView
+            android:id="@+id/mode_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Rule"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/black"
+            android:gravity="end" />
+
+        <TextView
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:id="@+id/mode_chevron"
+            android:text="›"
+            android:textSize="16sp"
+            android:textColor="#8A000000"
+            android:gravity="center"
+            android:importantForAccessibility="no" />
+    </LinearLayout>
+
+    <!-- Divider -->
+    <TextView
+        android:id="@+id/divider2"
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:background="#1A000000"
+        android:importantForAccessibility="no" />
+
+    <!-- Node Row -->
+    <LinearLayout
+        android:id="@+id/node_row"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="@drawable/widget_ripple">
+
+        <TextView
+            android:id="@+id/node_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Node"
+            android:textSize="10sp"
+            android:textColor="#8A000000" />
+
+        <TextView
+            android:id="@+id/node_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Auto"
+            android:textSize="12sp"
+            android:textColor="@android:color/black"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:gravity="end" />
+
+        <TextView
+            android:id="@+id/node_chevron"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:text="›"
+            android:textSize="16sp"
+            android:textColor="#8A000000"
+            android:gravity="center"
+            android:importantForAccessibility="no" />
+    </LinearLayout>
+
+</LinearLayout>

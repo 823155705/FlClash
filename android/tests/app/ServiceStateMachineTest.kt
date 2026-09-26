@@ -132,6 +132,8 @@ private class FakeHost(override val scope: CoroutineScope) : ServiceStateHost {
 
     override fun app(): AppGateway? = app
 
+    override fun widget(): com.follow.clash.plugins.WidgetPlugin? = null
+
     override suspend fun quickSetup(initParams: String, setupParams: String): Result<String> {
         setupCalls++
         lastInitParams = initParams

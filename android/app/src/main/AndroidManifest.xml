@@ -27,6 +27,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:name=".FlClashApplication"
@@ -86,6 +88,10 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <action android:name="${applicationId}.action.TOGGLE" />
             </intent-filter>
+            <intent-filter>
+                <category android:name="android.intent.category.DEFAULT" />
+                <action android:name="${applicationId}.action.SELECT_PROXY" />
+            </intent-filter>
         </activity>
 
         <service
@@ -110,6 +116,54 @@
             <intent-filter>
                 <action android:name="${applicationId}.intent.action.VPN_START_REQUESTED" />
                 <action android:name="${applicationId}.intent.action.VPN_REVOKED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".WidgetProvider"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="${applicationId}.action.CYCLE_MODE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="${applicationId}.action.CYCLE_NODE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="${applicationId}.action.SELECT_PROXY" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".WidgetProviderWide"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_4x2" />
+        </receiver>
+
+        <receiver
+            android:name=".hyperos.HyperOsRefreshReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.USER_PRESENT" />
+                <action android:name="android.intent.action.SCREEN_ON" />
+                <action android:name="com.follow.clash.hyperos.ACTION_WIDGET_REFRESH" />
             </intent-filter>
         </receiver>
 

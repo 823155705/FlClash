@@ -1,0 +1,70 @@
+name: sync-upstream
+
+on:
+  schedule:
+    # 每天 08:00 UTC（北京时间 16:00）检查官方是否有新提交
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream
+        run: |
+          git remote add upstream https://github.com/chen08209/FlClash.git
+          git fetch upstream main --tags
+
+      - name: Sync main with upstream
+        id: sync
+        run: |
+          before="$(git rev-parse HEAD)"
+          git merge --ff-only upstream/main || {
+            echo "main is ahead of upstream or has diverged; skip auto-merge" >&2
+            exit 1
+          }
+          after="$(git rev-parse HEAD)"
+          if [ "$before" = "$after" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "main is already up to date with upstream."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "main updated: $before -> $after"
+          fi
+
+      - name: Push main
+        if: steps.sync.outputs.changed == 'true'
+        run: git push origin main
+
+      - name: Update widget branch
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          git fetch origin widget
+          git checkout widget
+          if git rebase main; then
+            git push --force-with-lease origin widget
+            echo "widget rebased onto latest main."
+          else
+            git rebase --abort || true
+            echo "::warning::widget rebase hit conflicts. Resolve manually, then push."
+            exit 1
+          fi

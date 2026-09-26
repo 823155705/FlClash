@@ -77,3 +77,5 @@ devtools_options.yaml
 .fvm/
 .fvmrc
 /coverage/lcov.info
+signing/
+android/app/keystore.jks

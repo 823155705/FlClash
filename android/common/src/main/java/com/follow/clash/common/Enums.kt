@@ -6,6 +6,7 @@ enum class QuickAction {
     STOP,
     START,
     TOGGLE,
+    SELECT_PROXY,
 }
 
 enum class BroadcastAction {
