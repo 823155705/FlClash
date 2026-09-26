@@ -194,5 +194,10 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- HyperOS: widget version for the whole app (under application) -->
+        <meta-data
+            android:name="miuiWidgetVersion"
+            android:value="1" />
     </application>
 </manifest>

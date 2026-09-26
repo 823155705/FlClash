@@ -30,7 +30,7 @@ internal object WidgetUi {
         val isDarkMode = HyperOsStyle.isDark(context)
 
         if (isDarkMode) {
-            views.setInt(R.id.widget_root, "setBackgroundResource", R.drawable.widget_bg_dark)
+            views.setInt(android.R.id.background, "setBackgroundResource", R.drawable.widget_bg_dark)
             views.setInt(R.id.status_row, "setBackgroundResource", R.drawable.widget_ripple_dark)
             views.setInt(R.id.mode_row, "setBackgroundResource", R.drawable.widget_ripple_dark)
             views.setInt(R.id.node_row, "setBackgroundResource", R.drawable.widget_ripple_dark)
