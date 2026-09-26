@@ -84,7 +84,7 @@ jobs:
       - name: Build Android APK (arm64)
         env:
           ANDROID_NDK_HOME: ${{ steps.build-ndk.outputs.ndk-path }}
-        run: dart setup.dart android --arch arm64 -v
+        run: dart setup.dart android --arch arm64 --env stable -v
 
       - name: Collect artifacts
         run: |

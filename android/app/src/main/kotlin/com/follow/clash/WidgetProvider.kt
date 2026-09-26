@@ -247,8 +247,17 @@ class WidgetProvider : AppWidgetProvider() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        val action = intent.action
+        // HyperOS exposure refresh sends miui.appwidget.action.APPWIDGET_UPDATE
+        if (action == "miui.appwidget.action.APPWIDGET_UPDATE") {
+            val am = AppWidgetManager.getInstance(context)
+            val ids = intent.getIntArrayExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS)
+                ?: am.getAppWidgetIds(ComponentName(context, WidgetProvider::class.java))
+            onUpdate(context, am, ids)
+            return
+        }
         super.onReceive(context, intent)
-        when (intent.action) {
+        when (action) {
             actionCycleMode(context) -> handleCycleMode(context)
             actionCycleNode(context) -> handleCycleNode(context)
             actionSelectProxy(context) -> {
