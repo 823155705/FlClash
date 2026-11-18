@@ -38,19 +38,64 @@ class AppTrafficRecords extends Table {
   };
 }
 
-@DriftAccessor(tables: [AppTrafficRecords])
+class AppTrafficHours extends Table {
+  @override
+  String get tableName => 'app_traffic_hours_by_app';
+
+  IntColumn get day => integer()();
+  IntColumn get profileId => integer()();
+  IntColumn get hour => integer()();
+  TextColumn get applicationId => text()();
+  TextColumn get applicationLabel => text()();
+  IntColumn get upload => integer()();
+  IntColumn get download => integer()();
+
+  @override
+  Set<Column> get primaryKey => {day, profileId, hour, applicationId};
+}
+
+@DriftAccessor(tables: [AppTrafficRecords, AppTrafficHours])
 class AppTrafficDao extends DatabaseAccessor<Database>
     with _$AppTrafficDaoMixin {
   AppTrafficDao(super.attachedDatabase);
 
+  int? _lastPrunedDay;
+
   Future<void> addAll(Iterable<AppTrafficDelta> deltas) async {
-    final values = deltas.where((delta) => delta.total > 0).toList();
-    if (values.isEmpty) {
+    final daily = <(int, int, String, String, String), AppTrafficDelta>{};
+    final hourly = <(int, int, int, String), AppTrafficDelta>{};
+    for (final delta in deltas) {
+      if (delta.total <= 0) continue;
+      final day = delta.day.millisecondsSinceEpoch;
+      final key = (
+        day,
+        delta.profileId,
+        delta.applicationId,
+        delta.proxy,
+        delta.provider,
+      );
+      daily.update(key, (old) => old.plus(delta), ifAbsent: () => delta);
+      if (delta.hour case final hour?) {
+        hourly.update(
+          (day, delta.profileId, hour, delta.applicationId),
+          (old) => old.plus(delta),
+          ifAbsent: () => delta,
+        );
+      }
+    }
+    if (daily.isEmpty) {
       return;
     }
-    await transaction(() async {
-      for (final delta in values) {
-        await customStatement(
+    final now = DateTime.now();
+    final retention = DateTime(
+      now.year,
+      now.month,
+      now.day - 1,
+    ).millisecondsSinceEpoch;
+    final prune = _lastPrunedDay != retention;
+    await batch((batch) {
+      for (final delta in daily.values) {
+        batch.customStatement(
           'INSERT INTO app_traffic_records '
           '(day, profile_id, profile_label, application_id, '
           'application_label, process_path, proxy, provider, upload, '
@@ -73,15 +118,49 @@ class AppTrafficDao extends DatabaseAccessor<Database>
             delta.provider,
             delta.upload,
             delta.download,
-            DateTime.now().millisecondsSinceEpoch,
+            now.millisecondsSinceEpoch,
           ],
         );
       }
+      final hoursTable = appTrafficHours.actualTableName;
+      for (final MapEntry(key: (day, profile, hour, app), :value)
+          in hourly.entries) {
+        batch.customStatement(
+          'INSERT INTO $hoursTable (day, profile_id, hour, application_id, '
+          'application_label, upload, download) VALUES (?, ?, ?, ?, ?, ?, ?) '
+          'ON CONFLICT(day, profile_id, hour, application_id) DO UPDATE SET '
+          'application_label = excluded.application_label, '
+          'upload = $hoursTable.upload + excluded.upload, '
+          'download = $hoursTable.download + excluded.download',
+          [
+            day,
+            profile,
+            hour,
+            app,
+            value.applicationLabel,
+            value.upload,
+            value.download,
+          ],
+        );
+      }
+      if (prune) {
+        batch.customStatement('DELETE FROM $hoursTable WHERE day < ?', [
+          retention,
+        ]);
+      }
     });
-    attachedDatabase.notifyUpdates({TableUpdate.onTable(appTrafficRecords)});
+    _lastPrunedDay = retention;
+    attachedDatabase.notifyUpdates({
+      TableUpdate.onTable(appTrafficRecords),
+      if (hourly.isNotEmpty || prune) TableUpdate.onTable(appTrafficHours),
+    });
   }
 
-  Selectable<AppTrafficUsage> queryUsage({int? profileId, DateTime? since}) {
+  (String, List<Variable<Object>>) _scope(
+    int? profileId,
+    DateTime? since,
+    DateTime? until,
+  ) {
     final conditions = <String>[];
     final variables = <Variable<Object>>[];
     if (profileId != null) {
@@ -92,20 +171,41 @@ class AppTrafficDao extends DatabaseAccessor<Database>
       conditions.add('day >= ?');
       variables.add(Variable.withInt(since.millisecondsSinceEpoch));
     }
-    final where = conditions.isEmpty ? '' : 'WHERE ${conditions.join(' AND ')}';
+    if (until != null) {
+      conditions.add('day < ?');
+      variables.add(Variable.withInt(until.millisecondsSinceEpoch));
+    }
+    return (
+      conditions.isEmpty ? '' : 'WHERE ${conditions.join(' AND ')}',
+      variables,
+    );
+  }
+
+  Selectable<AppTrafficUsage> queryUsage({
+    int? profileId,
+    DateTime? since,
+    DateTime? until,
+    AppTrafficSort sort = AppTrafficSort.total,
+  }) {
+    final (where, variables) = _scope(profileId, since, until);
+    final order = switch (sort) {
+      AppTrafficSort.total => 'SUM(upload + download)',
+      AppTrafficSort.upload => 'SUM(upload)',
+      AppTrafficSort.download => 'SUM(download)',
+    };
     return customSelect(
       'SELECT application_id, MAX(application_label) AS application_label, '
       'MAX(process_path) AS process_path, SUM(upload) AS upload, '
-      'SUM(download) AS download, GROUP_CONCAT(DISTINCT proxy) AS proxies, '
-      'GROUP_CONCAT(DISTINCT provider) AS providers '
+      'SUM(download) AS download, json_group_array(DISTINCT proxy) AS proxies, '
+      'json_group_array(DISTINCT provider) AS providers '
       'FROM app_traffic_records $where GROUP BY application_id '
-      'ORDER BY SUM(upload + download) DESC, application_label ASC',
+      'ORDER BY $order DESC, application_label ASC, application_id ASC',
       variables: variables,
       readsFrom: {appTrafficRecords},
     ).map((row) {
       List<String> values(String column) {
-        return (row.readNullable<String>(column) ?? '')
-            .split(',')
+        return (jsonDecode(row.read<String>(column)) as List)
+            .cast<String>()
             .where((value) => value.isNotEmpty)
             .toList();
       }
@@ -122,11 +222,58 @@ class AppTrafficDao extends DatabaseAccessor<Database>
     });
   }
 
-  Future<int> clear({int? profileId}) {
+  Selectable<AppTrafficBucket> queryTimeline({
+    int? profileId,
+    DateTime? since,
+    DateTime? until,
+    bool hourly = false,
+  }) {
+    final (where, variables) = _scope(profileId, since, until);
+    final bucket = hourly
+        ? 'hour'
+        : since == null
+        ? "CAST(strftime('%Y%m', day / 1000, 'unixepoch', 'localtime') AS INTEGER)"
+        : 'day';
+    final TableInfo table = hourly ? appTrafficHours : appTrafficRecords;
+    const emptyLabel = "''";
+    final legacy = hourly
+        ? 'UNION ALL SELECT -1, NULL, $emptyLabel, '
+              'COALESCE(SUM(upload), 0) - (SELECT COALESCE(SUM(upload), 0) FROM usage), '
+              'COALESCE(SUM(download), 0) - (SELECT COALESCE(SUM(download), 0) FROM usage) '
+              'FROM app_traffic_records $where '
+              'HAVING SUM(upload + download) > (SELECT COALESCE(SUM(upload + download), 0) FROM usage) '
+        : '';
+    return customSelect(
+      'WITH usage AS (SELECT $bucket AS bucket, application_id, '
+      'MAX(application_label) AS label, SUM(upload) AS upload, SUM(download) AS download '
+      'FROM ${table.actualTableName} $where GROUP BY 1, 2), '
+      'top_apps AS (SELECT application_id, MAX(label) AS label FROM usage '
+      'GROUP BY 1 ORDER BY SUM(upload + download) DESC, application_id LIMIT 3) '
+      'SELECT bucket, top_apps.application_id AS application_id, '
+      'COALESCE(top_apps.label, $emptyLabel) AS label, SUM(upload) AS upload, SUM(download) AS download '
+      'FROM usage LEFT JOIN top_apps USING (application_id) '
+      'GROUP BY bucket, top_apps.application_id $legacy ORDER BY 1, 2',
+      variables: hourly ? [...variables, ...variables] : variables,
+      readsFrom: {table, if (hourly) appTrafficRecords},
+    ).map(
+      (row) => (
+        index: row.read<int>('bucket'),
+        applicationId: row.readNullable<String>('application_id'),
+        applicationLabel: row.read<String>('label'),
+        upload: row.read<int>('upload'),
+        download: row.read<int>('download'),
+      ),
+    );
+  }
+
+  Future<int> clear({int? profileId}) => transaction(() async {
     final stmt = appTrafficRecords.delete();
+    final hours = appTrafficHours.delete();
     if (profileId != null) {
       stmt.where((row) => row.profileId.equals(profileId));
+      hours.where((row) => row.profileId.equals(profileId));
     }
+    await hours.go();
     return stmt.go();
-  }
+  });
 }

@@ -1080,6 +1080,7 @@
   "appTraffic": "App Traffic",
   "appTrafficDesc": "View subscription proxy traffic by application",
   "appTrafficScope": "Only traffic sent through subscription proxies is counted. DIRECT connections are excluded. Data updates every second and is retained after restart.",
+  "appTrafficUnbucketed": "Traffic without an hourly breakdown",
   "today": "Today",
   "lastSevenDays": "Last 7 days",
   "allTime": "All time",

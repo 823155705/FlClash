@@ -313,6 +313,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "appTrafficScope": MessageLookupByLibrary.simpleMessage(
       "仅统计实际经订阅代理转发的流量，DIRECT 直连不计入。数据每秒更新，重启后保留。",
     ),
+    "appTrafficUnbucketed": MessageLookupByLibrary.simpleMessage("未按小时记录的流量"),
     "appendSystemDns": MessageLookupByLibrary.simpleMessage("追加系统DNS"),
     "applied": MessageLookupByLibrary.simpleMessage("已应用"),
     "applyNow": MessageLookupByLibrary.simpleMessage("立即应用"),

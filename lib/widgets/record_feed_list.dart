@@ -17,6 +17,7 @@ class RecordFeedList<T> extends StatefulWidget {
   final bool reverse;
   final bool shrinkWrap;
   final double gap;
+  final double? itemExtent;
   final double estimatedItemExtent;
 
   const RecordFeedList({
@@ -31,6 +32,7 @@ class RecordFeedList<T> extends StatefulWidget {
     this.reverse = false,
     this.shrinkWrap = false,
     this.gap = 0,
+    this.itemExtent,
   });
 
   @override
@@ -110,6 +112,7 @@ class _RecordFeedListState<T> extends State<RecordFeedList<T>>
       scrollCacheExtent: arrivalCacheExtent,
       itemCount: widget.items.length,
       gap: widget.gap,
+      itemExtent: widget.itemExtent,
       estimatedItemExtent: widget.estimatedItemExtent,
       findChildIndexCallback: _indexOf,
       itemBuilder: (_, index) {

@@ -124,6 +124,7 @@ abstract class TrackerInfo with _$TrackerInfo {
     required List<String> chains,
     @Default([]) List<String> providerChains,
     @Default(false) bool direct,
+    @Default(false) bool internal,
     required String rule,
     required String rulePayload,
     int? downloadSpeed,

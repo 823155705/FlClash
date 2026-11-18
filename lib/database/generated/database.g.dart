@@ -5919,6 +5919,479 @@ class AppTrafficRecordsCompanion extends UpdateCompanion<AppTrafficRecord> {
   }
 }
 
+class $AppTrafficHoursTable extends AppTrafficHours
+    with TableInfo<$AppTrafficHoursTable, AppTrafficHour> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AppTrafficHoursTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _dayMeta = const VerificationMeta('day');
+  @override
+  late final GeneratedColumn<int> day = GeneratedColumn<int>(
+    'day',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _profileIdMeta = const VerificationMeta(
+    'profileId',
+  );
+  @override
+  late final GeneratedColumn<int> profileId = GeneratedColumn<int>(
+    'profile_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _hourMeta = const VerificationMeta('hour');
+  @override
+  late final GeneratedColumn<int> hour = GeneratedColumn<int>(
+    'hour',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _applicationIdMeta = const VerificationMeta(
+    'applicationId',
+  );
+  @override
+  late final GeneratedColumn<String> applicationId = GeneratedColumn<String>(
+    'application_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _applicationLabelMeta = const VerificationMeta(
+    'applicationLabel',
+  );
+  @override
+  late final GeneratedColumn<String> applicationLabel = GeneratedColumn<String>(
+    'application_label',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _uploadMeta = const VerificationMeta('upload');
+  @override
+  late final GeneratedColumn<int> upload = GeneratedColumn<int>(
+    'upload',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _downloadMeta = const VerificationMeta(
+    'download',
+  );
+  @override
+  late final GeneratedColumn<int> download = GeneratedColumn<int>(
+    'download',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    day,
+    profileId,
+    hour,
+    applicationId,
+    applicationLabel,
+    upload,
+    download,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'app_traffic_hours_by_app';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AppTrafficHour> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('day')) {
+      context.handle(
+        _dayMeta,
+        day.isAcceptableOrUnknown(data['day']!, _dayMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dayMeta);
+    }
+    if (data.containsKey('profile_id')) {
+      context.handle(
+        _profileIdMeta,
+        profileId.isAcceptableOrUnknown(data['profile_id']!, _profileIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_profileIdMeta);
+    }
+    if (data.containsKey('hour')) {
+      context.handle(
+        _hourMeta,
+        hour.isAcceptableOrUnknown(data['hour']!, _hourMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_hourMeta);
+    }
+    if (data.containsKey('application_id')) {
+      context.handle(
+        _applicationIdMeta,
+        applicationId.isAcceptableOrUnknown(
+          data['application_id']!,
+          _applicationIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_applicationIdMeta);
+    }
+    if (data.containsKey('application_label')) {
+      context.handle(
+        _applicationLabelMeta,
+        applicationLabel.isAcceptableOrUnknown(
+          data['application_label']!,
+          _applicationLabelMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_applicationLabelMeta);
+    }
+    if (data.containsKey('upload')) {
+      context.handle(
+        _uploadMeta,
+        upload.isAcceptableOrUnknown(data['upload']!, _uploadMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_uploadMeta);
+    }
+    if (data.containsKey('download')) {
+      context.handle(
+        _downloadMeta,
+        download.isAcceptableOrUnknown(data['download']!, _downloadMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_downloadMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {day, profileId, hour, applicationId};
+  @override
+  AppTrafficHour map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AppTrafficHour(
+      day: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}day'],
+      )!,
+      profileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}profile_id'],
+      )!,
+      hour: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}hour'],
+      )!,
+      applicationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}application_id'],
+      )!,
+      applicationLabel: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}application_label'],
+      )!,
+      upload: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}upload'],
+      )!,
+      download: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}download'],
+      )!,
+    );
+  }
+
+  @override
+  $AppTrafficHoursTable createAlias(String alias) {
+    return $AppTrafficHoursTable(attachedDatabase, alias);
+  }
+}
+
+class AppTrafficHour extends DataClass implements Insertable<AppTrafficHour> {
+  final int day;
+  final int profileId;
+  final int hour;
+  final String applicationId;
+  final String applicationLabel;
+  final int upload;
+  final int download;
+  const AppTrafficHour({
+    required this.day,
+    required this.profileId,
+    required this.hour,
+    required this.applicationId,
+    required this.applicationLabel,
+    required this.upload,
+    required this.download,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['day'] = Variable<int>(day);
+    map['profile_id'] = Variable<int>(profileId);
+    map['hour'] = Variable<int>(hour);
+    map['application_id'] = Variable<String>(applicationId);
+    map['application_label'] = Variable<String>(applicationLabel);
+    map['upload'] = Variable<int>(upload);
+    map['download'] = Variable<int>(download);
+    return map;
+  }
+
+  AppTrafficHoursCompanion toCompanion(bool nullToAbsent) {
+    return AppTrafficHoursCompanion(
+      day: Value(day),
+      profileId: Value(profileId),
+      hour: Value(hour),
+      applicationId: Value(applicationId),
+      applicationLabel: Value(applicationLabel),
+      upload: Value(upload),
+      download: Value(download),
+    );
+  }
+
+  factory AppTrafficHour.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AppTrafficHour(
+      day: serializer.fromJson<int>(json['day']),
+      profileId: serializer.fromJson<int>(json['profileId']),
+      hour: serializer.fromJson<int>(json['hour']),
+      applicationId: serializer.fromJson<String>(json['applicationId']),
+      applicationLabel: serializer.fromJson<String>(json['applicationLabel']),
+      upload: serializer.fromJson<int>(json['upload']),
+      download: serializer.fromJson<int>(json['download']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'day': serializer.toJson<int>(day),
+      'profileId': serializer.toJson<int>(profileId),
+      'hour': serializer.toJson<int>(hour),
+      'applicationId': serializer.toJson<String>(applicationId),
+      'applicationLabel': serializer.toJson<String>(applicationLabel),
+      'upload': serializer.toJson<int>(upload),
+      'download': serializer.toJson<int>(download),
+    };
+  }
+
+  AppTrafficHour copyWith({
+    int? day,
+    int? profileId,
+    int? hour,
+    String? applicationId,
+    String? applicationLabel,
+    int? upload,
+    int? download,
+  }) => AppTrafficHour(
+    day: day ?? this.day,
+    profileId: profileId ?? this.profileId,
+    hour: hour ?? this.hour,
+    applicationId: applicationId ?? this.applicationId,
+    applicationLabel: applicationLabel ?? this.applicationLabel,
+    upload: upload ?? this.upload,
+    download: download ?? this.download,
+  );
+  AppTrafficHour copyWithCompanion(AppTrafficHoursCompanion data) {
+    return AppTrafficHour(
+      day: data.day.present ? data.day.value : this.day,
+      profileId: data.profileId.present ? data.profileId.value : this.profileId,
+      hour: data.hour.present ? data.hour.value : this.hour,
+      applicationId: data.applicationId.present
+          ? data.applicationId.value
+          : this.applicationId,
+      applicationLabel: data.applicationLabel.present
+          ? data.applicationLabel.value
+          : this.applicationLabel,
+      upload: data.upload.present ? data.upload.value : this.upload,
+      download: data.download.present ? data.download.value : this.download,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AppTrafficHour(')
+          ..write('day: $day, ')
+          ..write('profileId: $profileId, ')
+          ..write('hour: $hour, ')
+          ..write('applicationId: $applicationId, ')
+          ..write('applicationLabel: $applicationLabel, ')
+          ..write('upload: $upload, ')
+          ..write('download: $download')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    day,
+    profileId,
+    hour,
+    applicationId,
+    applicationLabel,
+    upload,
+    download,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AppTrafficHour &&
+          other.day == this.day &&
+          other.profileId == this.profileId &&
+          other.hour == this.hour &&
+          other.applicationId == this.applicationId &&
+          other.applicationLabel == this.applicationLabel &&
+          other.upload == this.upload &&
+          other.download == this.download);
+}
+
+class AppTrafficHoursCompanion extends UpdateCompanion<AppTrafficHour> {
+  final Value<int> day;
+  final Value<int> profileId;
+  final Value<int> hour;
+  final Value<String> applicationId;
+  final Value<String> applicationLabel;
+  final Value<int> upload;
+  final Value<int> download;
+  final Value<int> rowid;
+  const AppTrafficHoursCompanion({
+    this.day = const Value.absent(),
+    this.profileId = const Value.absent(),
+    this.hour = const Value.absent(),
+    this.applicationId = const Value.absent(),
+    this.applicationLabel = const Value.absent(),
+    this.upload = const Value.absent(),
+    this.download = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  AppTrafficHoursCompanion.insert({
+    required int day,
+    required int profileId,
+    required int hour,
+    required String applicationId,
+    required String applicationLabel,
+    required int upload,
+    required int download,
+    this.rowid = const Value.absent(),
+  }) : day = Value(day),
+       profileId = Value(profileId),
+       hour = Value(hour),
+       applicationId = Value(applicationId),
+       applicationLabel = Value(applicationLabel),
+       upload = Value(upload),
+       download = Value(download);
+  static Insertable<AppTrafficHour> custom({
+    Expression<int>? day,
+    Expression<int>? profileId,
+    Expression<int>? hour,
+    Expression<String>? applicationId,
+    Expression<String>? applicationLabel,
+    Expression<int>? upload,
+    Expression<int>? download,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (day != null) 'day': day,
+      if (profileId != null) 'profile_id': profileId,
+      if (hour != null) 'hour': hour,
+      if (applicationId != null) 'application_id': applicationId,
+      if (applicationLabel != null) 'application_label': applicationLabel,
+      if (upload != null) 'upload': upload,
+      if (download != null) 'download': download,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  AppTrafficHoursCompanion copyWith({
+    Value<int>? day,
+    Value<int>? profileId,
+    Value<int>? hour,
+    Value<String>? applicationId,
+    Value<String>? applicationLabel,
+    Value<int>? upload,
+    Value<int>? download,
+    Value<int>? rowid,
+  }) {
+    return AppTrafficHoursCompanion(
+      day: day ?? this.day,
+      profileId: profileId ?? this.profileId,
+      hour: hour ?? this.hour,
+      applicationId: applicationId ?? this.applicationId,
+      applicationLabel: applicationLabel ?? this.applicationLabel,
+      upload: upload ?? this.upload,
+      download: download ?? this.download,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (day.present) {
+      map['day'] = Variable<int>(day.value);
+    }
+    if (profileId.present) {
+      map['profile_id'] = Variable<int>(profileId.value);
+    }
+    if (hour.present) {
+      map['hour'] = Variable<int>(hour.value);
+    }
+    if (applicationId.present) {
+      map['application_id'] = Variable<String>(applicationId.value);
+    }
+    if (applicationLabel.present) {
+      map['application_label'] = Variable<String>(applicationLabel.value);
+    }
+    if (upload.present) {
+      map['upload'] = Variable<int>(upload.value);
+    }
+    if (download.present) {
+      map['download'] = Variable<int>(download.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AppTrafficHoursCompanion(')
+          ..write('day: $day, ')
+          ..write('profileId: $profileId, ')
+          ..write('hour: $hour, ')
+          ..write('applicationId: $applicationId, ')
+          ..write('applicationLabel: $applicationLabel, ')
+          ..write('upload: $upload, ')
+          ..write('download: $download, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$Database extends GeneratedDatabase {
   _$Database(QueryExecutor e) : super(e);
   $DatabaseManager get managers => $DatabaseManager(this);
@@ -5936,6 +6409,9 @@ abstract class _$Database extends GeneratedDatabase {
   late final $MitmModulesTable mitmModules = $MitmModulesTable(this);
   late final $AppTrafficRecordsTable appTrafficRecords =
       $AppTrafficRecordsTable(this);
+  late final $AppTrafficHoursTable appTrafficHours = $AppTrafficHoursTable(
+    this,
+  );
   late final Index idxRuleTarget = Index(
     'idx_rule_target',
     'CREATE INDEX idx_rule_target ON rules (rule_target)',
@@ -5992,6 +6468,7 @@ abstract class _$Database extends GeneratedDatabase {
     ipQualities,
     mitmModules,
     appTrafficRecords,
+    appTrafficHours,
     idxRuleTarget,
     idxRulesProfileOrder,
     idxProxyGroupsProfileOrder,
@@ -10439,6 +10916,257 @@ typedef $$AppTrafficRecordsTableProcessedTableManager =
       AppTrafficRecord,
       PrefetchHooks Function()
     >;
+typedef $$AppTrafficHoursTableCreateCompanionBuilder =
+    AppTrafficHoursCompanion Function({
+      required int day,
+      required int profileId,
+      required int hour,
+      required String applicationId,
+      required String applicationLabel,
+      required int upload,
+      required int download,
+      Value<int> rowid,
+    });
+typedef $$AppTrafficHoursTableUpdateCompanionBuilder =
+    AppTrafficHoursCompanion Function({
+      Value<int> day,
+      Value<int> profileId,
+      Value<int> hour,
+      Value<String> applicationId,
+      Value<String> applicationLabel,
+      Value<int> upload,
+      Value<int> download,
+      Value<int> rowid,
+    });
+
+class $$AppTrafficHoursTableFilterComposer
+    extends Composer<_$Database, $AppTrafficHoursTable> {
+  $$AppTrafficHoursTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get day => $composableBuilder(
+    column: $table.day,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get profileId => $composableBuilder(
+    column: $table.profileId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get hour => $composableBuilder(
+    column: $table.hour,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get applicationId => $composableBuilder(
+    column: $table.applicationId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get applicationLabel => $composableBuilder(
+    column: $table.applicationLabel,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get upload => $composableBuilder(
+    column: $table.upload,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get download => $composableBuilder(
+    column: $table.download,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$AppTrafficHoursTableOrderingComposer
+    extends Composer<_$Database, $AppTrafficHoursTable> {
+  $$AppTrafficHoursTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get day => $composableBuilder(
+    column: $table.day,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get profileId => $composableBuilder(
+    column: $table.profileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get hour => $composableBuilder(
+    column: $table.hour,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get applicationId => $composableBuilder(
+    column: $table.applicationId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get applicationLabel => $composableBuilder(
+    column: $table.applicationLabel,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get upload => $composableBuilder(
+    column: $table.upload,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get download => $composableBuilder(
+    column: $table.download,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$AppTrafficHoursTableAnnotationComposer
+    extends Composer<_$Database, $AppTrafficHoursTable> {
+  $$AppTrafficHoursTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get day =>
+      $composableBuilder(column: $table.day, builder: (column) => column);
+
+  GeneratedColumn<int> get profileId =>
+      $composableBuilder(column: $table.profileId, builder: (column) => column);
+
+  GeneratedColumn<int> get hour =>
+      $composableBuilder(column: $table.hour, builder: (column) => column);
+
+  GeneratedColumn<String> get applicationId => $composableBuilder(
+    column: $table.applicationId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get applicationLabel => $composableBuilder(
+    column: $table.applicationLabel,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get upload =>
+      $composableBuilder(column: $table.upload, builder: (column) => column);
+
+  GeneratedColumn<int> get download =>
+      $composableBuilder(column: $table.download, builder: (column) => column);
+}
+
+class $$AppTrafficHoursTableTableManager
+    extends
+        RootTableManager<
+          _$Database,
+          $AppTrafficHoursTable,
+          AppTrafficHour,
+          $$AppTrafficHoursTableFilterComposer,
+          $$AppTrafficHoursTableOrderingComposer,
+          $$AppTrafficHoursTableAnnotationComposer,
+          $$AppTrafficHoursTableCreateCompanionBuilder,
+          $$AppTrafficHoursTableUpdateCompanionBuilder,
+          (
+            AppTrafficHour,
+            BaseReferences<_$Database, $AppTrafficHoursTable, AppTrafficHour>,
+          ),
+          AppTrafficHour,
+          PrefetchHooks Function()
+        > {
+  $$AppTrafficHoursTableTableManager(_$Database db, $AppTrafficHoursTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AppTrafficHoursTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AppTrafficHoursTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$AppTrafficHoursTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> day = const Value.absent(),
+                Value<int> profileId = const Value.absent(),
+                Value<int> hour = const Value.absent(),
+                Value<String> applicationId = const Value.absent(),
+                Value<String> applicationLabel = const Value.absent(),
+                Value<int> upload = const Value.absent(),
+                Value<int> download = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => AppTrafficHoursCompanion(
+                day: day,
+                profileId: profileId,
+                hour: hour,
+                applicationId: applicationId,
+                applicationLabel: applicationLabel,
+                upload: upload,
+                download: download,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required int day,
+                required int profileId,
+                required int hour,
+                required String applicationId,
+                required String applicationLabel,
+                required int upload,
+                required int download,
+                Value<int> rowid = const Value.absent(),
+              }) => AppTrafficHoursCompanion.insert(
+                day: day,
+                profileId: profileId,
+                hour: hour,
+                applicationId: applicationId,
+                applicationLabel: applicationLabel,
+                upload: upload,
+                download: download,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$AppTrafficHoursTable, AppTrafficHour>(table),
+                  BaseReferences<
+                    _$Database,
+                    $AppTrafficHoursTable,
+                    AppTrafficHour
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$AppTrafficHoursTableProcessedTableManager =
+    ProcessedTableManager<
+      _$Database,
+      $AppTrafficHoursTable,
+      AppTrafficHour,
+      $$AppTrafficHoursTableFilterComposer,
+      $$AppTrafficHoursTableOrderingComposer,
+      $$AppTrafficHoursTableAnnotationComposer,
+      $$AppTrafficHoursTableCreateCompanionBuilder,
+      $$AppTrafficHoursTableUpdateCompanionBuilder,
+      (
+        AppTrafficHour,
+        BaseReferences<_$Database, $AppTrafficHoursTable, AppTrafficHour>,
+      ),
+      AppTrafficHour,
+      PrefetchHooks Function()
+    >;
 
 class $DatabaseManager {
   final _$Database _db;
@@ -10469,6 +11197,8 @@ class $DatabaseManager {
       $$MitmModulesTableTableManager(_db, _db.mitmModules);
   $$AppTrafficRecordsTableTableManager get appTrafficRecords =>
       $$AppTrafficRecordsTableTableManager(_db, _db.appTrafficRecords);
+  $$AppTrafficHoursTableTableManager get appTrafficHours =>
+      $$AppTrafficHoursTableTableManager(_db, _db.appTrafficHours);
 }
 
 mixin _$ProfilesDaoMixin on DatabaseAccessor<Database> {
@@ -10624,6 +11354,7 @@ class MitmModulesDaoManager {
 mixin _$AppTrafficDaoMixin on DatabaseAccessor<Database> {
   $AppTrafficRecordsTable get appTrafficRecords =>
       attachedDatabase.appTrafficRecords;
+  $AppTrafficHoursTable get appTrafficHours => attachedDatabase.appTrafficHours;
   AppTrafficDaoManager get managers => AppTrafficDaoManager(this);
 }
 
@@ -10634,5 +11365,10 @@ class AppTrafficDaoManager {
       $$AppTrafficRecordsTableTableManager(
         _db.attachedDatabase,
         _db.appTrafficRecords,
+      );
+  $$AppTrafficHoursTableTableManager get appTrafficHours =>
+      $$AppTrafficHoursTableTableManager(
+        _db.attachedDatabase,
+        _db.appTrafficHours,
       );
 }

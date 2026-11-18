@@ -41,6 +41,8 @@ class _CoreContainerState extends ConsumerState<CoreManager>
   );
   Timer? _trafficTimer;
   bool _trafficCaptureRunning = false;
+  int _trafficEpoch = 0;
+  int _ticksUntilSnapshot = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -109,6 +111,11 @@ class _CoreContainerState extends ConsumerState<CoreManager>
     });
     // Every Core process starts without a log stream.
     ref.listenManual(coreStatusProvider, (prev, next) {
+      if (prev == CoreStatus.connected && next != prev) {
+        _trafficEpoch++;
+        _trafficTracker.clearConnections();
+        _ticksUntilSnapshot = 0;
+      }
       if (next == CoreStatus.connected && prev != CoreStatus.connected) {
         _syncLogStream();
       }
@@ -134,16 +141,22 @@ class _CoreContainerState extends ConsumerState<CoreManager>
   }
 
   Future<void> _captureAppTraffic() async {
-    if (_trafficCaptureRunning ||
-        !mounted ||
-        ref.read(coreStatusProvider) != CoreStatus.connected) {
+    if (_trafficCaptureRunning || !mounted) {
       return;
     }
     _trafficCaptureRunning = true;
     try {
-      final connections = await _core.getConnections();
-      if (mounted) {
-        await _trafficTracker.observeSnapshot(connections);
+      if (ref.read(coreStatusProvider) == CoreStatus.connected &&
+          _ticksUntilSnapshot-- <= 0) {
+        // Bulk events can be dropped when their queue fills.
+        _ticksUntilSnapshot = 14;
+        final epoch = _trafficEpoch;
+        final connections = await _core.getConnections();
+        if (mounted && epoch == _trafficEpoch) {
+          await _trafficTracker.observeSnapshot(connections);
+        }
+      } else {
+        await _trafficTracker.flush();
       }
     } catch (error) {
       commonPrint.log(
@@ -157,11 +170,7 @@ class _CoreContainerState extends ConsumerState<CoreManager>
 
   @override
   void onConnectionClosed(TrackerInfo trackerInfo) {
-    unawaited(
-      _trafficTracker.observeClosed(trackerInfo).catchError((Object error) {
-        commonPrint.log('persist app traffic error: $error');
-      }),
-    );
+    _trafficTracker.observeClosed(trackerInfo);
   }
 
   @override
@@ -212,6 +221,7 @@ class _CoreContainerState extends ConsumerState<CoreManager>
 
   @override
   void onRequestTraffic(Map<String, RequestTraffic> traffic) {
+    _trafficTracker.observeChanges(traffic);
     ref.read(requestsProvider.notifier).updateTraffic(traffic);
     super.onRequestTraffic(traffic);
   }

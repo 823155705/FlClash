@@ -4,106 +4,122 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: custom-app-traffic-release
+  group: custom-app-traffic-release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  APP_TRAFFIC_CUSTOM_BUILD: 'true'
+  APP_UPDATE_REPOSITORY: ${{ github.repository }}
+  RUSTUP_TOOLCHAIN: '1.99.0'
+
 jobs:
-  release:
+  package:
     if: github.repository != 'chen08209/FlClash'
-    runs-on: macos-latest
-    env:
-      GH_TOKEN: ${{ github.token }}
-      APP_TRAFFIC_CUSTOM_BUILD: 'true'
-      APP_UPDATE_REPOSITORY: ${{ github.repository }}
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            platform: macos
+            os: macos-latest
+          - name: macos-amd64
+            platform: macos
+            os: macos-15-intel
+          - name: windows-amd64
+            platform: windows
+            os: windows-2022
+          - name: android
+            platform: android
+            os: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
-          fetch-depth: 0
           submodules: recursive
-      - name: Check the upstream release
-        id: upstream
-        run: |
-          tag=$(gh api repos/chen08209/FlClash/releases/latest --jq .tag_name)
-          previous=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .body 2>/dev/null || true)
-          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] && printf '%s' "$previous" | grep -Fq "flclash-upstream-tag: $tag"; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git config --global url.https://github.com/.insteadOf git@github.com:
-          git fetch --no-tags https://github.com/chen08209/FlClash.git "refs/tags/$tag"
-          python3 tool/sync_custom_upstream.py FETCH_HEAD
-          flutter_version=$(git show FETCH_HEAD:.github/workflows/build.yaml | sed -n "s/.*FLUTTER_VERSION: '\([^']*\)'.*/\1/p" | head -n 1)
-          go_version=$(git show FETCH_HEAD:.github/workflows/build.yaml | sed -n "s/.*GO_VERSION: '\([^']*\)'.*/\1/p" | head -n 1)
-          echo "flutter=$flutter_version" >> "$GITHUB_OUTPUT"
-          echo "go=$go_version" >> "$GITHUB_OUTPUT"
-          rust_version=$(sed -n 's/^channel = "\([^"]*\)"/\1/p' plugins/rust_api/rust/rust-toolchain.toml)
-          echo "rust=$rust_version" >> "$GITHUB_OUTPUT"
-          echo "RUSTUP_TOOLCHAIN=$rust_version" >> "$GITHUB_ENV"
-          git submodule update --init --recursive
+          persist-credentials: false
       - uses: subosito/flutter-action@v2
-        if: steps.upstream.outputs.changed == 'true'
         with:
-          flutter-version: ${{ steps.upstream.outputs.flutter }}
+          flutter-version: '3.47.6'
           cache: true
       - uses: actions/setup-go@v5
-        if: steps.upstream.outputs.changed == 'true'
         with:
-          go-version: ${{ steps.upstream.outputs.go }}
+          go-version: '1.27.1'
           cache-dependency-path: core/go.sum
       - uses: dtolnay/rust-toolchain@master
-        if: steps.upstream.outputs.changed == 'true'
         with:
-          toolchain: ${{ steps.upstream.outputs.rust }}
+          toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
+          targets: ${{ matrix.platform == 'android' && 'aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android' || '' }}
       - uses: Swatinem/rust-cache@v2
-        if: steps.upstream.outputs.changed == 'true'
         with:
-          workspaces: plugins/rust_api/rust
-      - name: Generate and verify the integrated feature
-        if: steps.upstream.outputs.changed == 'true'
+          workspaces: |
+            plugins/rust_api/rust
+            services/helper
+      - uses: actions/setup-java@v4
+        if: matrix.platform == 'android'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        if: matrix.platform == 'android'
+      - uses: nttld/setup-ndk@v1
+        if: matrix.platform == 'android'
+        id: ndk
+        with:
+          ndk-version: r28c
+          add-to-path: true
+          link-to-sdk: true
+      - name: Prepare Android APKs for local release signing
+        if: matrix.platform == 'android'
         run: |
-          flutter pub get
-          dart run intl_utils:generate
-          dart run build_runner build --delete-conflicting-outputs
-          dart format lib test tool setup.dart
-          flutter analyze --no-fatal-infos
-          dart run tool/test.dart -- --reporter expanded
-          CGO_ENABLED=0 go -C core test .
-          CGO_ENABLED=0 go -C core vet . ./cmd/...
-          test -f lib/views/traffic/app_traffic.dart
-          test -f lib/database/app_traffic.dart
-          git add -u
-          if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
-            git commit -m 'chore: sync upstream while retaining app traffic'
-          elif ! git diff --cached --quiet; then
-            git commit -m 'chore: regenerate custom release sources'
-          fi
-          git push origin HEAD:main
+          password=$(openssl rand -hex 24)
+          echo "::add-mask::$password"
+          keytool -genkeypair -noprompt -keystore android/app/keystore.jks \
+            -storetype JKS -storepass "$password" -keypass "$password" \
+            -alias transport -keyalg RSA -keysize 2048 -validity 7 -dname 'CN=CI transport only'
+          printf '\nkeyAlias=transport\nstorePassword=%s\nkeyPassword=%s\n' \
+            "$password" "$password" >> android/local.properties
+      - name: Prepare Windows packaging
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          git config --global core.longpaths true
+          if (-not (Test-Path 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')) {
+            choco install innosetup --yes --no-progress
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value 'C:\Program Files (x86)\Inno Setup 6'
+          Add-Content -Path $env:GITHUB_PATH -Value "$env:LOCALAPPDATA\Pub\Cache\bin"
       - uses: actions/setup-node@v4
-        if: steps.upstream.outputs.changed == 'true'
+        if: matrix.platform == 'macos'
         with:
           node-version: 22
-      - name: Build and publish the verified Mac update
-        if: steps.upstream.outputs.changed == 'true'
+      - name: Use the supported Xcode
+        if: matrix.platform == 'macos'
         run: |
-          test "$(uname -m)" = arm64
-          npm install -g appdmg
-          version=$(sed -n 's/^version: \([^+]*\).*/\1/p' pubspec.yaml)
-          build=$(date -u +%Y%m%d%H)
-          source=$(git rev-parse HEAD)
-          sed -i '' -E "s/^version:.*/version: $version+$build/" pubspec.yaml
+          sudo xcode-select -s /Applications/Xcode_26.3.app || sudo xcode-select -s /Applications/Xcode_26.2.app
+          xcodebuild -version
+      - name: Disable Impeller on Intel macOS
+        if: matrix.name == 'macos-amd64'
+        run: plutil -replace FLTEnableImpeller -bool NO macos/Runner/Info.plist
+      - name: Package and check the installer
+        shell: bash
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
           export PATH="$PATH:$HOME/.pub-cache/bin"
-          dart setup.dart macos --env stable
-          file="dist/FlClash-$version-macos-arm64.dmg"
-          hdiutil verify "$file"
-          (cd dist && shasum -a 256 "FlClash-$version-macos-arm64.dmg" > SHA256SUMS)
-          tag="v$version+$build"
-          printf '增加了流量统计功能\n\n<!-- flclash-update-build: %s -->\n<!-- flclash-upstream-tag: %s -->\n' "$build" '${{ steps.upstream.outputs.tag }}' > release-notes.md
-          gh release create "$tag" "$file" dist/SHA256SUMS --target "$source" --title "FlClash $version 应用流量定制版" --notes-file release-notes.md --latest
+          flutter pub get
+          dart setup.dart "$PLATFORM" --env stable
+          if [[ "$PLATFORM" == macos ]]; then
+            hdiutil verify dist/*.dmg
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.name }}
+          path: dist/
+          if-no-files-found: error

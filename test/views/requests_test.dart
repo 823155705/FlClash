@@ -62,9 +62,9 @@ void main() {
 
   tearDown(() => container.dispose());
 
-  void seedRequests(List<TrackerInfo> requests) {
+  void seedRequests(List<TrackerInfo> requests, {int capacity = 500}) {
     final notifier = container.read(requestsProvider.notifier);
-    notifier.value = FixedList<TrackerInfo>(500);
+    notifier.value = FixedList<TrackerInfo>(capacity);
     for (final request in requests) {
       notifier.addRequest(request);
     }
@@ -340,6 +340,38 @@ void main() {
     await tapHeader('Target');
     expect(hostsTopDown(), ['alpha.test', 'beta.test', 'gamma.test']);
 
+    await teardownView(tester);
+  });
+
+  testWidgets('sorting a full request table lays out only visible rows', (
+    tester,
+  ) async {
+    seedRequests(
+      List.generate(
+        maxRequestsLength,
+        (index) => _tracker(
+          id: '$index',
+          host: 'host-$index.test',
+          download: (index * 71) % maxRequestsLength,
+        ),
+      ),
+      capacity: maxRequestsLength,
+    );
+    await pumpRequests(tester);
+    await tester.tap(find.text('Download'));
+    await tester.pumpAndSettle();
+
+    final rows = find
+        .byType(TrackerInfoTableRow)
+        .evaluate()
+        .map((node) => node.widget as TrackerInfoTableRow)
+        .toList();
+    expect(rows, isNotEmpty);
+    expect(rows.length, lessThan(100));
+    expect(
+      rows.any((row) => row.trackerInfo.download == maxRequestsLength - 1),
+      isTrue,
+    );
     await teardownView(tester);
   });
 

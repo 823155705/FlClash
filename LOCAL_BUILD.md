@@ -10,7 +10,7 @@ APP_UPDATE_REPOSITORY=<GitHub用户名>/FlClash ./tool/build_local_macos.sh
 
 安装包在 `dist/`。更新源通过构建参数 `APP_UPDATE_REPOSITORY` 指定，未指定的上游构建仍然使用原仓库。定制构建传入 `APP_TRAFFIC_CUSTOM_BUILD=true`，支持同一版本号下按构建号检查修复包。
 
-`.github/workflows/custom-release.yaml` 在 fork 中每 6 小时检查一次上游正式版本，也可手动执行。它合并上游、重生成代码并执行静态分析和回归测试，成功后发布包含统计功能的 Apple Silicon DMG 和 SHA256SUMS。代码冲突或测试失败时不会发布新更新，应用继续使用已有版本。
+在 fork 的 GitHub Actions 中手动运行 `Custom app traffic release`，可为选定提交构建 macOS（Apple Silicon 和 Intel）、Windows（x64）和 Android 安装包。运行成功后下载各平台构建产物，用本地发布密钥重新签署 Android APK，验证签名，再生成 `SHA256SUMS` 并发布到该 fork。Android 构建产物使用一次性签名，只用于打包和传输。
 
 macOS 应用内更新会校验下载文件 SHA-256、包签名和 Bundle ID，等待旧进程退出后替换并重启，旧应用保留在安装日志目录内，文件替换失败会恢复旧应用。应用配置和统计数据库位于应用包外，覆盖安装继续使用原数据。
 

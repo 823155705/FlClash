@@ -1080,6 +1080,7 @@
   "appTraffic": "Trafic des applications",
   "appTrafficDesc": "Trafic du proxy par application",
   "appTrafficScope": "Seul le trafic réellement envoyé par un proxy est compté. Les connexions DIRECT sont exclues. Les données sont actualisées chaque seconde et conservées après redémarrage.",
+  "appTrafficUnbucketed": "Trafic sans détail horaire",
   "today": "Aujourd’hui",
   "lastSevenDays": "7 derniers jours",
   "allTime": "Toute la période",

@@ -2,6 +2,7 @@ package core
 
 import (
 	"github.com/metacubex/mihomo/component/resolver"
+	"github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/dns"
 	"github.com/metacubex/mihomo/tunnel/statistic"
 )
@@ -22,13 +23,15 @@ func handleResetTraffic() {
 
 type AppTrafficConnection struct {
 	*statistic.TrackerInfo
-	Direct bool `json:"direct"`
+	Direct   bool `json:"direct"`
+	Internal bool `json:"internal,omitempty"`
 }
 
 func appTrafficConnection(info *statistic.TrackerInfo) *AppTrafficConnection {
 	return &AppTrafficConnection{
 		TrackerInfo: info,
 		Direct:      statistic.IsDirect(info.Chain.Last()),
+		Internal:    info.Metadata != nil && info.Metadata.Type == constant.INNER,
 	}
 }
 

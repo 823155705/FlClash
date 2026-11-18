@@ -94,6 +94,7 @@ _TrackerInfo _$TrackerInfoFromJson(Map<String, dynamic> json) => _TrackerInfo(
           .toList() ??
       const [],
   direct: json['direct'] as bool? ?? false,
+  internal: json['internal'] as bool? ?? false,
   rule: json['rule'] as String,
   rulePayload: json['rulePayload'] as String,
   downloadSpeed: (json['downloadSpeed'] as num?)?.toInt(),
@@ -110,6 +111,7 @@ Map<String, dynamic> _$TrackerInfoToJson(_TrackerInfo instance) =>
       'chains': instance.chains,
       'providerChains': instance.providerChains,
       'direct': instance.direct,
+      'internal': instance.internal,
       'rule': instance.rule,
       'rulePayload': instance.rulePayload,
       'downloadSpeed': instance.downloadSpeed,

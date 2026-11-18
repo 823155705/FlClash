@@ -393,6 +393,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "appTrafficScope": MessageLookupByLibrary.simpleMessage(
       "Solo se cuenta el tráfico enviado mediante un proxy. Las conexiones DIRECT se excluyen. Los datos se actualizan cada segundo y se conservan tras reiniciar.",
     ),
+    "appTrafficUnbucketed": MessageLookupByLibrary.simpleMessage(
+      "Tráfico sin desglose por horas",
+    ),
     "appendSystemDns": MessageLookupByLibrary.simpleMessage(
       "Añadir DNS del sistema",
     ),

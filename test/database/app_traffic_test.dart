@@ -23,9 +23,11 @@ void main() {
     String applicationLabel = 'Browser',
     String proxy = 'Proxy A',
     String provider = 'Provider A',
+    int? hour,
   }) {
     return AppTrafficDelta(
       day: day,
+      hour: hour,
       profileId: profileId,
       profileLabel: 'Plan $profileId',
       applicationId: applicationId,
@@ -101,6 +103,166 @@ void main() {
     );
     expect(iterator.current.single.total, 46);
   });
+
+  test('keeps hourly and legacy traffic separate and clears both', () async {
+    final now = DateTime.now();
+    final day = DateTime(now.year, now.month, now.day);
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    final dao = database.appTrafficDao;
+    await dao.addAll([
+      delta(
+        day: day,
+        profileId: 1,
+        applicationId: 'browser',
+        upload: 10,
+        download: 1,
+        proxy: 'A, B',
+      ),
+      delta(
+        day: day,
+        profileId: 1,
+        applicationId: 'browser',
+        upload: 8,
+        download: 2,
+        hour: 6,
+        proxy: 'A, B',
+      ),
+      delta(
+        day: day,
+        profileId: 1,
+        applicationId: 'sync',
+        upload: 1,
+        download: 30,
+        hour: 6,
+      ),
+      delta(
+        day: tomorrow,
+        profileId: 1,
+        applicationId: 'future',
+        upload: 80,
+        download: 80,
+        hour: 6,
+      ),
+      delta(
+        day: day,
+        profileId: 2,
+        applicationId: 'other',
+        upload: 100,
+        download: 100,
+        hour: 6,
+      ),
+    ]);
+
+    expect(
+      await dao
+          .queryTimeline(
+            profileId: 1,
+            since: day,
+            until: tomorrow,
+            hourly: true,
+          )
+          .get(),
+      [
+        (
+          index: -1,
+          applicationId: null,
+          applicationLabel: '',
+          upload: 10,
+          download: 1,
+        ),
+        (
+          index: 6,
+          applicationId: 'browser',
+          applicationLabel: 'Browser',
+          upload: 8,
+          download: 2,
+        ),
+        (
+          index: 6,
+          applicationId: 'sync',
+          applicationLabel: 'Browser',
+          upload: 1,
+          download: 30,
+        ),
+      ],
+    );
+    final daily = await dao
+        .queryTimeline(profileId: 1, since: day, until: tomorrow)
+        .get();
+    expect(
+      daily.map((slice) => slice.index),
+      everyElement(day.millisecondsSinceEpoch),
+    );
+    expect(
+      daily.map((slice) => (slice.applicationId, slice.upload, slice.download)),
+      [('browser', 18, 3), ('sync', 1, 30)],
+    );
+    final monthly = await dao
+        .queryTimeline(profileId: 1, until: tomorrow)
+        .get();
+    expect(
+      monthly.map((slice) => slice.index),
+      everyElement(day.year * 100 + day.month),
+    );
+    expect(
+      monthly.map(
+        (slice) => (slice.applicationId, slice.upload, slice.download),
+      ),
+      [('browser', 18, 3), ('sync', 1, 30)],
+    );
+    final byUpload = await dao
+        .queryUsage(
+          profileId: 1,
+          since: day,
+          until: tomorrow,
+          sort: AppTrafficSort.upload,
+        )
+        .get();
+    expect(byUpload.map((row) => row.applicationId), ['browser', 'sync']);
+    expect(byUpload.first.proxies, ['A, B']);
+    final byDownload = await dao
+        .queryUsage(
+          profileId: 1,
+          since: day,
+          until: tomorrow,
+          sort: AppTrafficSort.download,
+        )
+        .get();
+    expect(byDownload.map((row) => row.applicationId), ['sync', 'browser']);
+    await dao.clear(profileId: 1);
+    expect(await dao.queryUsage(profileId: 1).get(), isEmpty);
+    expect(await database.appTrafficHours.count.getSingle(), 1);
+  });
+
+  test(
+    'keeps the top applications across periods and adds the rest to Other',
+    () async {
+      final now = DateTime.now();
+      final day = DateTime(now.year, now.month, now.day);
+      final dao = database.appTrafficDao;
+      await dao.addAll([
+        for (var i = 1; i <= 5; i++)
+          for (final hour in [6, 18])
+            delta(
+              day: day,
+              profileId: 1,
+              applicationId: 'app$i',
+              upload: i * hour,
+              download: 0,
+              hour: hour,
+            ),
+      ]);
+      final slices = await dao
+          .queryTimeline(profileId: 1, since: day, hourly: true)
+          .get();
+      expect(slices, hasLength(8));
+      expect(
+        slices.take(4).map((slice) => (slice.applicationId, slice.upload)),
+        [(null, 18), ('app3', 18), ('app4', 24), ('app5', 30)],
+      );
+      expect(slices.fold(0, (sum, slice) => sum + slice.upload), 360);
+    },
+  );
 
   test(
     'filters by subscription and date and clears only selected scope',

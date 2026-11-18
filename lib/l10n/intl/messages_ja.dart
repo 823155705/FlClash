@@ -323,6 +323,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "appTrafficScope": MessageLookupByLibrary.simpleMessage(
       "サブスクリプションプロキシを経由した通信量のみを集計します。DIRECT 接続は除外されます。データは毎秒更新され、再起動後も保持されます。",
     ),
+    "appTrafficUnbucketed": MessageLookupByLibrary.simpleMessage(
+      "時間別の内訳がない通信量",
+    ),
     "appendSystemDns": MessageLookupByLibrary.simpleMessage("システムDNSを追加"),
     "applied": MessageLookupByLibrary.simpleMessage("適用しました"),
     "applyNow": MessageLookupByLibrary.simpleMessage("今すぐ適用"),

@@ -321,6 +321,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "appTrafficScope": MessageLookupByLibrary.simpleMessage(
       "프록시를 통해 실제로 전송된 트래픽만 집계합니다. DIRECT 연결은 제외합니다. 매초 갱신되며 재시작 후에도 유지됩니다.",
     ),
+    "appTrafficUnbucketed": MessageLookupByLibrary.simpleMessage(
+      "시간별 내역이 없는 트래픽",
+    ),
     "appendSystemDns": MessageLookupByLibrary.simpleMessage("시스템 DNS 추가"),
     "applied": MessageLookupByLibrary.simpleMessage("적용했습니다"),
     "applyNow": MessageLookupByLibrary.simpleMessage("지금 적용"),

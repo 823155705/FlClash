@@ -9098,6 +9098,16 @@ class AppLocalizations {
     );
   }
 
+  /// `Traffic without an hourly breakdown`
+  String get appTrafficUnbucketed {
+    return Intl.message(
+      'Traffic without an hourly breakdown',
+      name: 'appTrafficUnbucketed',
+      desc: '',
+      args: [],
+    );
+  }
+
   /// `Today`
   String get today {
     return Intl.message('Today', name: 'today', desc: '', args: []);

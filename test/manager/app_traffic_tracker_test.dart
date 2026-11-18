@@ -41,12 +41,9 @@ void main() {
     await tracker.observeSnapshot([
       connection(id: 'a', upload: 100, download: 200),
     ]);
-    await tracker.observeClosed(
-      connection(id: 'a', upload: 140, download: 260),
-    );
-    await tracker.observeClosed(
-      connection(id: 'a', upload: 140, download: 260),
-    );
+    tracker.observeClosed(connection(id: 'a', upload: 140, download: 260));
+    tracker.observeClosed(connection(id: 'a', upload: 140, download: 260));
+    await tracker.flush();
 
     expect(persisted, hasLength(2));
     expect(persisted.map((delta) => delta.upload), [100, 40]);
@@ -64,7 +61,7 @@ void main() {
       resolveProfile: () => const AppTrafficProfileContext(id: 0, label: ''),
     );
 
-    await tracker.observeClosed(
+    tracker.observeClosed(
       connection(
         id: 'direct',
         upload: 100,
@@ -72,7 +69,14 @@ void main() {
         chains: const ['DIRECT'],
       ),
     );
-    await tracker.observeClosed(
+    tracker.observeClosed(
+      connection(
+        id: 'dialer',
+        upload: 700,
+        download: 900,
+      ).copyWith(internal: true),
+    );
+    tracker.observeClosed(
       connection(
         id: 'proxy',
         upload: 5,
@@ -81,6 +85,7 @@ void main() {
         processPath: '',
       ),
     );
+    await tracker.flush();
 
     expect(persisted, hasLength(1));
     expect(persisted.single.applicationId, 'unknown');
@@ -97,7 +102,8 @@ void main() {
 
     tracker.observeStart(connection(id: 'a', upload: 0, download: 0));
     profile = const AppTrafficProfileContext(id: 2, label: 'Second');
-    await tracker.observeClosed(connection(id: 'a', upload: 10, download: 20));
+    tracker.observeClosed(connection(id: 'a', upload: 10, download: 20));
+    await tracker.flush();
 
     expect(persisted.single.profileId, 1);
     expect(persisted.single.profileLabel, 'First');
@@ -110,13 +116,40 @@ void main() {
       resolveProfile: () =>
           const AppTrafficProfileContext(id: 1, label: 'Plan'),
     );
-    await tracker.observeClosed(
+    tracker.observeClosed(
       connection(
         id: 'direct',
         upload: 120,
         download: 340,
       ).copyWith(chains: const ['Local network', 'Selector'], direct: true),
     );
+    await tracker.flush();
     expect(persisted, isEmpty);
   });
+
+  test(
+    'retries a failed batch with newer deltas and never double counts',
+    () async {
+      var fail = true;
+      final persisted = <AppTrafficDelta>[];
+      final tracker = AppTrafficTracker(
+        persist: (batch) async {
+          if (fail) throw StateError('database temporarily unavailable');
+          persisted.addAll(batch);
+        },
+        resolveProfile: () =>
+            const AppTrafficProfileContext(id: 1, label: 'Plan'),
+      );
+      tracker.observeStart(connection(id: 'a', upload: 5, download: 0));
+      tracker.observeChanges({'a': (upload: 20, download: 1)});
+      await expectLater(tracker.flush(), throwsStateError);
+      fail = false;
+      tracker.observeClosed(connection(id: 'a', upload: 30, download: 4));
+      tracker.observeChanges({'a': (upload: 30, download: 4)});
+      await tracker.flush();
+      await tracker.flush();
+      expect(persisted.single.upload, 30);
+      expect(persisted.single.download, 4);
+    },
+  );
 }

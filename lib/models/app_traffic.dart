@@ -7,6 +7,7 @@ class AppTrafficProfileContext {
 
 class AppTrafficDelta {
   final DateTime day;
+  final int? hour;
   final int profileId;
   final String profileLabel;
   final String applicationId;
@@ -19,6 +20,7 @@ class AppTrafficDelta {
 
   const AppTrafficDelta({
     required this.day,
+    this.hour,
     required this.profileId,
     required this.profileLabel,
     required this.applicationId,
@@ -31,7 +33,31 @@ class AppTrafficDelta {
   });
 
   int get total => upload + download;
+
+  AppTrafficDelta plus(AppTrafficDelta next) => AppTrafficDelta(
+    day: day,
+    hour: hour,
+    profileId: profileId,
+    profileLabel: next.profileLabel,
+    applicationId: applicationId,
+    applicationLabel: next.applicationLabel,
+    processPath: next.processPath,
+    proxy: proxy,
+    provider: provider,
+    upload: upload + next.upload,
+    download: download + next.download,
+  );
 }
+
+typedef AppTrafficBucket = ({
+  int index,
+  String? applicationId,
+  String applicationLabel,
+  int upload,
+  int download,
+});
+
+enum AppTrafficSort { total, upload, download }
 
 class AppTrafficUsage {
   final String applicationId;

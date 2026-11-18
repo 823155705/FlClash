@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/database/database.dart';
 import 'package:fl_clash/models/models.dart';
@@ -6,6 +9,9 @@ import 'package:fl_clash/ui/icons/icons.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart' show NumberFormat;
+
+part 'traffic_chart.dart';
 
 enum AppTrafficRange { today, sevenDays, all }
 
@@ -22,43 +28,94 @@ class _AppTrafficViewState extends ConsumerState<AppTrafficView> {
   static const _allProfiles = -1;
   late int _profileId;
   AppTrafficRange _range = AppTrafficRange.today;
+  AppTrafficSort _sort = AppTrafficSort.total;
+  late DateTime _today;
+  late final AppLifecycleListener _lifecycle;
+  Timer? _midnight;
   late Stream<List<AppTrafficUsage>> _usage;
+  late Stream<List<AppTrafficBucket>> _timeline;
 
   AppTrafficDao get _dao => widget.trafficDao ?? database.appTrafficDao;
+  int? get _selectedProfile => _profileId == _allProfiles ? null : _profileId;
+  DateTime get _tomorrow => DateTime(_today.year, _today.month, _today.day + 1);
+  DateTime? get _since => switch (_range) {
+    AppTrafficRange.today => _today,
+    AppTrafficRange.sevenDays => DateTime(
+      _today.year,
+      _today.month,
+      _today.day - 6,
+    ),
+    AppTrafficRange.all => null,
+  };
 
   @override
   void initState() {
     super.initState();
     _profileId = ref.read(currentProfileIdProvider) ?? _allProfiles;
-    _subscribe();
+    _today = _localDay(DateTime.now());
+    _subscribeScope();
+    _lifecycle = AppLifecycleListener(onResume: _refreshDay);
+    _scheduleMidnight();
   }
 
-  void _subscribe() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final since = switch (_range) {
-      AppTrafficRange.today => today,
-      AppTrafficRange.sevenDays => DateTime(now.year, now.month, now.day - 6),
-      AppTrafficRange.all => null,
-    };
+  @override
+  void dispose() {
+    _midnight?.cancel();
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  static DateTime _localDay(DateTime now) =>
+      DateTime(now.year, now.month, now.day);
+
+  void _scheduleMidnight() {
+    _midnight?.cancel();
+    _midnight = Timer(_tomorrow.difference(DateTime.now()), _refreshDay);
+  }
+
+  void _refreshDay() {
+    final today = _localDay(DateTime.now());
+    if (today != _today) {
+      setState(() {
+        _today = today;
+        _subscribeScope();
+      });
+    }
+    _scheduleMidnight();
+  }
+
+  void _subscribeScope() {
+    _subscribeUsage();
+    _timeline = _dao
+        .queryTimeline(
+          profileId: _selectedProfile,
+          since: _since,
+          until: _tomorrow,
+          hourly: _range == AppTrafficRange.today,
+        )
+        .watch();
+  }
+
+  void _subscribeUsage() {
     _usage = _dao
         .queryUsage(
-          profileId: _profileId == _allProfiles ? null : _profileId,
-          since: since,
+          profileId: _selectedProfile,
+          since: _since,
+          until: _tomorrow,
+          sort: _sort,
         )
         .watch();
   }
 
   Future<void> _clear() async {
     final l10n = context.appLocalizations;
+    final profile = _selectedProfile;
     final confirmed = await dialogs.showMessage(
       title: l10n.clearTrafficStatistics,
       message: TextSpan(text: l10n.clearTrafficStatisticsConfirm),
     );
     if (confirmed == true && mounted) {
-      await _dao.clear(
-        profileId: _profileId == _allProfiles ? null : _profileId,
-      );
+      await _dao.clear(profileId: profile);
     }
   }
 
@@ -77,17 +134,15 @@ class _AppTrafficViewState extends ConsumerState<AppTrafficView> {
       ],
       body: Builder(
         builder: (context) => StreamBuilder<List<AppTrafficUsage>>(
+          key: ValueKey((_profileId, _today, _range)),
           stream: _usage,
           builder: (context, snapshot) {
             final usages = snapshot.data ?? const <AppTrafficUsage>[];
-            final total = usages.fold<int>(
-              0,
-              (sum, usage) => sum + usage.total,
-            );
-            final upload = usages.fold<int>(
-              0,
-              (sum, usage) => sum + usage.upload,
-            );
+            var maximum = 0;
+            for (final usage in usages) {
+              final amount = _sort.amountOf(usage);
+              if (amount > maximum) maximum = amount;
+            }
             final header = Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               child: Column(
@@ -102,14 +157,15 @@ class _AppTrafficViewState extends ConsumerState<AppTrafficView> {
                       ...profiles.map((profile) => profile.id),
                     ],
                     value: _profileId,
-                    textBuilder: (id) => id == _allProfiles
-                        ? l10n.allSubscriptions
-                        : profiles
-                              .firstWhere((profile) => profile.id == id)
-                              .label,
+                    textBuilder: (id) =>
+                        profiles
+                            .where((profile) => profile.id == id)
+                            .firstOrNull
+                            ?.label ??
+                        l10n.allSubscriptions,
                     onChanged: (id) => setState(() {
                       _profileId = id;
-                      _subscribe();
+                      _subscribeScope();
                     }),
                   ),
                   SegmentedControl<AppTrafficRange>(
@@ -121,32 +177,15 @@ class _AppTrafficViewState extends ConsumerState<AppTrafficView> {
                     value: _range,
                     onChanged: (range) => setState(() {
                       _range = range;
-                      _subscribe();
+                      _subscribeScope();
                     }),
                   ),
-                  Card(
-                    padding: const EdgeInsets.all(20),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _TrafficValue(
-                            label: l10n.totalTraffic,
-                            value: total,
-                          ),
-                        ),
-                        Expanded(
-                          child: _TrafficValue(
-                            label: l10n.upload,
-                            value: upload,
-                          ),
-                        ),
-                        Expanded(
-                          child: _TrafficValue(
-                            label: l10n.download,
-                            value: total - upload,
-                          ),
-                        ),
-                      ],
+                  StreamBuilder<List<AppTrafficBucket>>(
+                    stream: _timeline,
+                    builder: (context, trend) => _TrafficOverview(
+                      range: _range,
+                      today: _today,
+                      timeline: trend.data ?? const [],
                     ),
                   ),
                   Text(
@@ -154,6 +193,21 @@ class _AppTrafficViewState extends ConsumerState<AppTrafficView> {
                     style: AppTextStyle.footnote
                         .of(context)
                         .copyWith(color: context.colorScheme.onSurfaceVariant),
+                  ),
+                  Semantics(
+                    label: l10n.sort,
+                    child: SegmentedControl<AppTrafficSort>(
+                      segments: [
+                        (AppTrafficSort.total, l10n.totalTraffic),
+                        (AppTrafficSort.upload, l10n.upload),
+                        (AppTrafficSort.download, l10n.download),
+                      ],
+                      value: _sort,
+                      onChanged: (sort) => setState(() {
+                        _sort = sort;
+                        _subscribeUsage();
+                      }),
+                    ),
                   ),
                 ],
               ),
@@ -168,7 +222,8 @@ class _AppTrafficViewState extends ConsumerState<AppTrafficView> {
                 ),
                 if (snapshot.hasError)
                   SliverToBoxAdapter(child: Text(snapshot.error.toString()))
-                else if (snapshot.connectionState == ConnectionState.waiting)
+                else if (!snapshot.hasData &&
+                    snapshot.connectionState == ConnectionState.waiting)
                   const SliverToBoxAdapter(
                     child: Padding(
                       padding: EdgeInsets.all(24),
@@ -190,11 +245,11 @@ class _AppTrafficViewState extends ConsumerState<AppTrafficView> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     sliver: SliverPrismList(
                       itemCount: usages.length,
-                      estimatedItemExtent: 130,
-                      gap: 8,
+                      estimatedItemExtent: 82,
                       itemBuilder: (_, index) => _AppTrafficItem(
                         usage: usages[index],
-                        maxTraffic: usages.first.total,
+                        sort: _sort,
+                        maxTraffic: maximum,
                       ),
                     ),
                   ),
@@ -210,28 +265,87 @@ class _AppTrafficViewState extends ConsumerState<AppTrafficView> {
   }
 }
 
-class _TrafficValue extends StatelessWidget {
-  final String label;
-  final int value;
+extension on AppTrafficSort {
+  int amountOf(AppTrafficUsage usage) => switch (this) {
+    AppTrafficSort.total => usage.total,
+    AppTrafficSort.upload => usage.upload,
+    AppTrafficSort.download => usage.download,
+  };
+}
 
-  const _TrafficValue({required this.label, required this.value});
+class _TrafficOverview extends StatelessWidget {
+  final AppTrafficRange range;
+  final DateTime today;
+  final List<AppTrafficBucket> timeline;
+
+  const _TrafficOverview({
+    required this.range,
+    required this.today,
+    required this.timeline,
+  });
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    spacing: 6,
-    children: [
-      Text(label, style: AppTextStyle.caption1.of(context)),
-      Text(value.traffic.show, style: AppTextStyle.title2.of(context)),
-    ],
-  );
+  Widget build(BuildContext context) {
+    final l10n = context.appLocalizations;
+    final colors = context.colorScheme;
+    var upload = 0;
+    var download = 0;
+    for (final bucket in timeline) {
+      upload += bucket.upload;
+      download += bucket.download;
+    }
+    final legacy = timeline.firstOrNull?.index == -1 ? timeline.first : null;
+    final slices = legacy == null ? timeline : timeline.skip(1).toList();
+    return Card(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 12,
+        children: [
+          Text(l10n.totalTraffic, style: AppTextStyle.subheadline.of(context)),
+          Text(
+            (upload + download).traffic.show,
+            style: AppTextStyle.largeTitle.of(context),
+          ),
+          if (slices.isNotEmpty)
+            _TrafficChart(bars: _trafficBars(range, today, slices)),
+          Wrap(
+            spacing: 20,
+            runSpacing: 8,
+            children: [
+              Text(
+                '${l10n.upload} ${upload.traffic.show}',
+                style: AppTextStyle.footnote.of(context),
+              ),
+              Text(
+                '${l10n.download} ${download.traffic.show}',
+                style: AppTextStyle.footnote.of(context),
+              ),
+            ],
+          ),
+          if (legacy != null)
+            Text(
+              '${l10n.appTrafficUnbucketed} · ${(legacy.upload + legacy.download).traffic.show}',
+              style: AppTextStyle.footnote
+                  .of(context)
+                  .copyWith(color: colors.onSurfaceVariant),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _AppTrafficItem extends StatelessWidget {
   final AppTrafficUsage usage;
+  final AppTrafficSort sort;
   final int maxTraffic;
 
-  const _AppTrafficItem({required this.usage, required this.maxTraffic});
+  const _AppTrafficItem({
+    required this.usage,
+    required this.sort,
+    required this.maxTraffic,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -239,25 +353,32 @@ class _AppTrafficItem extends StatelessWidget {
     final label = usage.applicationLabel.isEmpty
         ? l10n.unknownApplication
         : usage.applicationLabel;
-    return Card(
-      padding: const EdgeInsets.all(16),
+    final amount = sort.amountOf(usage);
+    final routes = {...usage.providers, ...usage.proxies}.take(4).join(' · ');
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        spacing: 10,
+        spacing: 6,
         children: [
           Row(
             children: [
               Expanded(
-                child: Text(label, style: AppTextStyle.headline.of(context)),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyle.headline.of(context),
+                ),
               ),
               Text(
-                usage.total.traffic.show,
+                amount.traffic.show,
                 style: AppTextStyle.headline.of(context),
               ),
             ],
           ),
           LinearProgressIndicator(
-            value: maxTraffic == 0 ? 0 : usage.total / maxTraffic,
+            value: maxTraffic == 0 ? 0 : amount / maxTraffic,
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -272,14 +393,15 @@ class _AppTrafficItem extends StatelessWidget {
               ),
             ],
           ),
-          Text(
-            {...usage.providers, ...usage.proxies}.take(4).join(' · '),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: AppTextStyle.caption1
-                .of(context)
-                .copyWith(color: context.colorScheme.onSurfaceVariant),
-          ),
+          if (routes.isNotEmpty)
+            Text(
+              routes,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyle.caption1
+                  .of(context)
+                  .copyWith(color: context.colorScheme.onSurfaceVariant),
+            ),
         ],
       ),
     );
