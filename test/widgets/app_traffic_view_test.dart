@@ -1,4 +1,5 @@
 import 'package:drift/native.dart';
+import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/database/database.dart';
 import 'package:fl_clash/models/models.dart';
 import 'package:fl_clash/providers/providers.dart';
@@ -9,9 +10,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prism_ui/card.dart';
+import 'package:prism_ui/prism_ui.dart' show ColorScheme;
 import 'package:prism_ui/segmented_control.dart';
 import 'package:prism_ui/shape.dart';
-import 'package:prism_ui/tooltip.dart';
 
 import '../helpers/test_app.dart';
 import '../helpers/test_profiles.dart';
@@ -19,6 +20,65 @@ import '../helpers/test_profiles.dart';
 void main() {
   late Database database;
   late ProviderContainer container;
+
+  Future<void> seedDefault() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    await database.appTrafficDao.addAll([
+      AppTrafficDelta(
+        day: today,
+        hour: 6,
+        profileId: 1,
+        profileLabel: 'Test plan',
+        applicationId: 'alpha-dl',
+        applicationLabel: 'Video Stream',
+        processPath: '',
+        proxy: 'Proxy A',
+        provider: 'Provider A',
+        upload: 10,
+        download: 400,
+      ),
+      AppTrafficDelta(
+        day: today,
+        hour: 6,
+        profileId: 1,
+        profileLabel: 'Test plan',
+        applicationId: 'beta-dl',
+        applicationLabel: 'File Sync',
+        processPath: '',
+        proxy: 'Proxy A',
+        provider: 'Provider A',
+        upload: 20,
+        download: 300,
+      ),
+      AppTrafficDelta(
+        day: today,
+        hour: 6,
+        profileId: 1,
+        profileLabel: 'Test plan',
+        applicationId: 'gamma-dl',
+        applicationLabel: 'Web Browser',
+        processPath: '',
+        proxy: 'Proxy A',
+        provider: 'Provider A',
+        upload: 30,
+        download: 200,
+      ),
+      AppTrafficDelta(
+        day: today,
+        hour: 6,
+        profileId: 1,
+        profileLabel: 'Test plan',
+        applicationId: 'zeta-up',
+        applicationLabel: 'Cloud Backup',
+        processPath: '',
+        proxy: 'Proxy A',
+        provider: 'Provider A',
+        upload: 150,
+        download: 10,
+      ),
+    ]);
+  }
 
   setUp(() async {
     database = Database(NativeDatabase.memory());
@@ -36,35 +96,7 @@ void main() {
         ),
       ],
     );
-    final now = DateTime.now();
-    await database.appTrafficDao.addAll([
-      AppTrafficDelta(
-        day: DateTime(now.year, now.month, now.day),
-        hour: 6,
-        profileId: 1,
-        profileLabel: 'Test plan',
-        applicationId: 'browser',
-        applicationLabel: 'Google Chrome',
-        processPath: '',
-        proxy: 'Proxy A',
-        provider: 'Provider A',
-        upload: 100,
-        download: 200,
-      ),
-      AppTrafficDelta(
-        day: DateTime(now.year, now.month, now.day),
-        hour: 6,
-        profileId: 1,
-        profileLabel: 'Test plan',
-        applicationId: 'sync',
-        applicationLabel: 'Cloud Sync',
-        processPath: '',
-        proxy: 'Proxy A',
-        provider: 'Provider A',
-        upload: 150,
-        download: 30,
-      ),
-    ]);
+    await seedDefault();
   });
 
   tearDown(() async {
@@ -72,10 +104,11 @@ void main() {
     await database.close();
   });
 
-  testWidgets('renders preserved usage with the current app components', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1000, 900);
+  Future<void> pumpView(
+    WidgetTester tester, {
+    Size size = const Size(1000, 900),
+  }) async {
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -88,111 +121,207 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Google Chrome'), findsOneWidget);
-    expect(find.text('Test plan').hitTestable(), findsOneWidget);
-    expect(find.text('App Traffic'), findsOneWidget);
-    expect(find.text('00:00'), findsOneWidget);
-    Finder segmentOf(String app) => find.byWidgetPredicate(
-      (widget) => widget is Tooltip && widget.message.startsWith('$app\n'),
+  }
+
+  Finder chartPlot() => find.byWidgetPredicate(
+    (widget) => widget is MouseRegion && widget.onHover != null,
+  );
+
+  Color? rowSwatchColor(WidgetTester tester, String app) {
+    final card = find.ancestor(of: find.text(app), matching: find.byType(Card));
+    final swatch = tester.widget<DecoratedBox>(
+      find
+          .descendant(
+            of: card,
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is DecoratedBox &&
+                  widget.decoration is ShapeDecoration &&
+                  (widget.decoration as ShapeDecoration).shape ==
+                      AppShape.circle,
+            ),
+          )
+          .first,
     );
-    Finder markerOf(Finder segment) =>
-        find.descendant(of: segment, matching: find.byType(ColoredBox)).first;
-    Color markerColor(Finder segment) =>
-        tester.widget<ColoredBox>(markerOf(segment)).color;
-    Color rowColor(String app) {
-      final card = find.ancestor(
-        of: find.text(app),
-        matching: find.byType(Card),
+    return (swatch.decoration as ShapeDecoration).color;
+  }
+
+  testWidgets(
+    'uses active card colors, metric-synced Top-3, hover/pin/unpin, and range reset',
+    (tester) async {
+      await pumpView(tester);
+
+      expect(find.text('App Traffic'), findsOneWidget);
+      expect(find.text('Test plan').hitTestable(), findsOneWidget);
+      expect(find.text('00:00'), findsOneWidget);
+      expect(find.text('23:00'), findsOneWidget);
+
+      final videoContext = tester.element(find.text('Video Stream'));
+      final onSurface = ColorScheme.of(videoContext).onSurface;
+      expect(
+        tester.widget<Text>(find.text('Video Stream')).style?.color,
+        onSurface,
       );
-      final swatch = tester.widget<DecoratedBox>(
-        find.descendant(
-          of: card,
-          matching: find.byWidgetPredicate(
-            (widget) =>
-                widget is DecoratedBox &&
-                widget.decoration is ShapeDecoration &&
-                (widget.decoration as ShapeDecoration).shape == AppShape.circle,
-          ),
+      expect(
+        tester.widget<Text>(find.text(1120.traffic.show).first).style?.color,
+        onSurface,
+      );
+
+      final primary = ColorScheme.of(videoContext).primary;
+      expect(rowSwatchColor(tester, 'Video Stream'), primary);
+
+      double rowY(String name) => tester.getTopLeft(find.text(name)).dy;
+      expect(rowY('Video Stream'), lessThan(rowY('Cloud Backup')));
+
+      await tester.tap(find.text('Upload'));
+      await tester.pumpAndSettle();
+      expect(rowY('Cloud Backup'), lessThan(rowY('Video Stream')));
+      expect(rowSwatchColor(tester, 'Cloud Backup'), primary);
+      expect(find.textContaining('Peak 06:00 · 210B'), findsOneWidget);
+
+      final plotRect = tester.getRect(chartPlot());
+      final bar6Bottom = Offset(
+        plotRect.left + (6.5 / 24) * plotRect.width,
+        plotRect.bottom - 14,
+      );
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(bar6Bottom);
+      await tester.pumpAndSettle();
+      expect(find.text('06:00 · Cloud Backup'), findsOneWidget);
+      expect(
+        find.textContaining('06:00 · Cloud Backup · 150B'),
+        findsOneWidget,
+      );
+
+      await mouse.removePointer();
+      await tester.pumpAndSettle();
+      expect(find.text('06:00 · Cloud Backup'), findsNothing);
+      expect(find.textContaining('06:00 · Cloud Backup · 150B'), findsNothing);
+
+      await tester.tapAt(bar6Bottom);
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('06:00 · Cloud Backup · 150B'),
+        findsOneWidget,
+      );
+
+      final emptySlot = Offset(
+        plotRect.left + (0.5 / 24) * plotRect.width,
+        plotRect.top + 14,
+      );
+      await tester.tapAt(emptySlot);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('06:00 · Cloud Backup · 150B'), findsNothing);
+
+      await tester.tapAt(bar6Bottom);
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('06:00 · Cloud Backup · 150B'),
+        findsOneWidget,
+      );
+
+      final range = find.byType(SegmentedControl<AppTrafficRange>);
+      await tester.tap(
+        find.descendant(of: range, matching: find.text('Last 7 days')),
+      );
+      final now = DateTime.now();
+      final dayLabel = find.text('${now.month}/${now.day}');
+      for (var frame = 0; frame < 20 && !dayLabel.tryEvaluate(); frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(dayLabel, findsOneWidget);
+      final overviewFade = find
+          .ancestor(
+            of: find.textContaining('Upload ').first,
+            matching: find.byType(FadeTransition),
+          )
+          .first;
+      expect(
+        tester.widget<FadeTransition>(overviewFade).opacity.value,
+        lessThan(1.0),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<FadeTransition>(overviewFade).opacity.value, 1.0);
+      expect(find.textContaining('06:00 · Cloud Backup · 150B'), findsNothing);
+      expect(
+        find.textContaining(
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} · Cloud Backup',
         ),
+        findsNothing,
       );
-      return (swatch.decoration as ShapeDecoration).color!;
-    }
 
-    final browser = segmentOf('Google Chrome');
-    final sync = segmentOf('Cloud Sync');
-    final browserColor = markerColor(browser);
-    final syncColor = markerColor(sync);
-    expect(browserColor, isNot(syncColor));
-    expect(browserColor, rowColor('Google Chrome'));
-    expect(syncColor, rowColor('Cloud Sync'));
+      await tester.tap(
+        find.descendant(of: range, matching: find.text('All time')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('${now.month}/${now.day}'), findsOneWidget);
 
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await mouse.addPointer(location: tester.getCenter(browser));
-    await tester.pumpAndSettle();
-    expect(find.text('Google Chrome\n300B · 62.5%'), findsOneWidget);
-    expect(markerColor(browser), browserColor);
-    final muted = markerColor(sync);
-    expect(muted, isNot(syncColor));
-    expect(HSLColor.fromColor(muted).saturation, 0);
+      final todayLabel = DateTime(now.year, now.month, now.day).show;
+      Focus.of(tester.element(chartPlot())).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('$todayLabel · Cloud Backup · 150B'),
+        findsOneWidget,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('$todayLabel · Cloud Backup · 150B'),
+        findsNothing,
+      );
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(milliseconds: 1));
+    },
+  );
 
-    await mouse.moveTo(tester.getCenter(sync));
-    await tester.pumpAndSettle();
-    expect(find.text('Cloud Sync\n180B · 37.5%'), findsOneWidget);
-    expect(markerColor(sync), syncColor);
-    expect(markerColor(browser), muted);
-    await mouse.removePointer();
-    await tester.pumpAndSettle();
-    expect(markerColor(browser), browserColor);
-    expect(markerColor(sync), syncColor);
+  testWidgets(
+    'supports adaptive All-time buckets, mobile layout, and clearing traffic',
+    (tester) async {
+      final now = DateTime.now();
+      await database.appTrafficDao.addAll([
+        AppTrafficDelta(
+          day: DateTime(now.year, now.month - 3, 1),
+          hour: 10,
+          profileId: 1,
+          profileLabel: 'Test plan',
+          applicationId: 'alpha-dl',
+          applicationLabel: 'Video Stream',
+          processPath: '',
+          proxy: 'Proxy A',
+          provider: 'Provider A',
+          upload: 50,
+          download: 500,
+        ),
+      ]);
+      await pumpView(tester, size: const Size(390, 844));
 
-    await tester.tap(browser);
-    await tester.pumpAndSettle();
-    final selected = find.textContaining('06:00 · Google Chrome ·');
-    expect(selected, findsOneWidget);
-    Focus.of(tester.element(markerOf(browser))).requestFocus();
-    await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    expect(selected, findsNothing);
-    final sort = find.byType(SegmentedControl<AppTrafficSort>);
-    final range = find.byType(SegmentedControl<AppTrafficRange>);
-    double position(String name) => tester.getTopLeft(find.text(name)).dy;
-    expect(position('Google Chrome'), lessThan(position('Cloud Sync')));
+      final range = find.byType(SegmentedControl<AppTrafficRange>);
+      await tester.tap(
+        find.descendant(of: range, matching: find.text('All time')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('${now.year}-${now.month.toString().padLeft(2, '0')}'),
+        findsOneWidget,
+      );
 
-    await tester.tap(find.descendant(of: sort, matching: find.text('Upload')));
-    await tester.pumpAndSettle();
-    expect(position('Cloud Sync'), lessThan(position('Google Chrome')));
-    await tester.tap(
-      find.descendant(of: sort, matching: find.text('Download')),
-    );
-    await tester.pumpAndSettle();
-    expect(position('Google Chrome'), lessThan(position('Cloud Sync')));
-
-    await tester.tap(
-      find.descendant(of: range, matching: find.text('Last 7 days')),
-    );
-    final now = DateTime.now();
-    final dayLabel = find.text('${now.month}/${now.day}');
-    for (var frame = 0; frame < 20 && !dayLabel.tryEvaluate(); frame++) {
-      await tester.pump(const Duration(milliseconds: 16));
-    }
-    expect(dayLabel, findsOneWidget);
-    expect(find.text('00:00'), findsOneWidget);
-    await tester.pumpAndSettle();
-    expect(find.text('00:00'), findsNothing);
-    await tester.tap(
-      find.descendant(of: range, matching: find.text('All time')),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      find.text('${now.year}-${now.month.toString().padLeft(2, '0')}'),
-      findsOneWidget,
-    );
-    tester.view.physicalSize = const Size(390, 844);
-    await tester.pumpAndSettle();
-    expect(find.byType(SegmentedControl<AppTrafficSort>), findsOneWidget);
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox());
-    await tester.pump(const Duration(milliseconds: 1));
-  });
+      await tester.tap(find.byTooltip('Clear traffic statistics'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('No subscription proxy traffic in this range'),
+        findsOneWidget,
+      );
+      expect(find.byType(SegmentedControl<AppTrafficRange>), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(milliseconds: 1));
+    },
+  );
 }

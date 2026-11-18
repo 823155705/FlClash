@@ -9,15 +9,25 @@ typedef AppTrafficProfileResolver = AppTrafficProfileContext Function();
 typedef _PendingKey = (int, int?, int, String, String, String);
 
 class AppTrafficTracker {
+  static const _maxClosedConnectionIds = 4096;
+  static const _maxPendingEntries = 4096;
+  static final _bundlePattern = RegExp(r'(^|/)([^/]+\.app)(/|$)');
+  static final _pathSeparatorPattern = RegExp(r'[/\\]');
+
   final AppTrafficPersist persist;
   final AppTrafficProfileResolver resolveProfile;
   final Map<String, _TrackedConnection> _connections = {};
   final LinkedHashSet<String> _closedConnectionIds = LinkedHashSet();
+  final Set<int?> _clearedDuringWrite = {};
   Map<_PendingKey, AppTrafficDelta> _pending = {};
   Future<void>? _writing;
-  static final _bundlePattern = RegExp(r'(^|/)([^/]+\.app)(/|$)');
+  int _observationSeq = 0;
 
   AppTrafficTracker({required this.persist, required this.resolveProfile});
+
+  bool get hasPending => _pending.isNotEmpty;
+
+  int beginSnapshot() => ++_observationSeq;
 
   void observeStart(TrackerInfo connection) {
     if (!_countsTraffic(connection) ||
@@ -28,12 +38,18 @@ class AppTrafficTracker {
       connection.id,
       () => _TrackedConnection(connection, resolveProfile()),
     );
+    tracked.lastSeenSeq = ++_observationSeq;
     _record(tracked, connection.upload, connection.download, DateTime.now());
   }
 
-  Future<void> observeSnapshot(Iterable<TrackerInfo> connections) {
+  Future<void> observeSnapshot(
+    Iterable<TrackerInfo> connections, {
+    int? snapshotToken,
+  }) {
     final now = DateTime.now();
+    final seenIds = snapshotToken == null ? null : <String>{};
     for (final connection in connections) {
+      seenIds?.add(connection.id);
       if (!_countsTraffic(connection) ||
           _closedConnectionIds.contains(connection.id)) {
         continue;
@@ -43,7 +59,18 @@ class AppTrafficTracker {
         () => _TrackedConnection(connection, resolveProfile()),
       );
       tracked.connection = connection;
+      tracked.lastSeenSeq = ++_observationSeq;
       _record(tracked, connection.upload, connection.download, now);
+    }
+    if (snapshotToken != null && seenIds != null) {
+      final staleIds = [
+        for (final MapEntry(:key, :value) in _connections.entries)
+          if (!seenIds.contains(key) && value.lastSeenSeq < snapshotToken) key,
+      ];
+      for (final id in staleIds) {
+        _connections.remove(id);
+        _markClosed(id);
+      }
     }
     return flush();
   }
@@ -52,6 +79,7 @@ class AppTrafficTracker {
     final now = DateTime.now();
     for (final MapEntry(:key, :value) in traffic.entries) {
       if (_connections[key] case final tracked?) {
+        tracked.lastSeenSeq = ++_observationSeq;
         _record(tracked, value.upload, value.download, now);
       }
     }
@@ -67,8 +95,12 @@ class AppTrafficTracker {
         _TrackedConnection(connection, resolveProfile());
     tracked.connection = connection;
     _record(tracked, connection.upload, connection.download, DateTime.now());
-    _closedConnectionIds.add(connection.id);
-    while (_closedConnectionIds.length > 2048) {
+    _markClosed(connection.id);
+  }
+
+  void _markClosed(String id) {
+    _closedConnectionIds.add(id);
+    while (_closedConnectionIds.length > _maxClosedConnectionIds) {
       _closedConnectionIds.remove(_closedConnectionIds.first);
     }
   }
@@ -79,21 +111,50 @@ class AppTrafficTracker {
       connection.chains.isNotEmpty &&
       connection.chains.first != 'DIRECT';
 
-  void clearConnections() => _connections.clear();
+  void clearConnections() {
+    for (final id in _connections.keys) {
+      _markClosed(id);
+    }
+    _connections.clear();
+  }
+
+  void clearPending({int? profileId}) {
+    if (profileId == null) {
+      _pending.clear();
+    } else {
+      _pending.removeWhere((key, _) => key.$3 == profileId);
+    }
+    if (_writing != null) {
+      _clearedDuringWrite.add(profileId);
+    }
+  }
 
   Future<void> flush() {
     if (_writing case final writing?) return writing;
     if (_pending.isEmpty) return Future.value();
     final batch = _pending;
     _pending = {};
+    _clearedDuringWrite.clear();
     return _writing = Future<void>.sync(() => persist(batch.values))
         .catchError((Object error, StackTrace stack) {
-          for (final MapEntry(:key, :value) in batch.entries) {
-            _pending.update(key, value.plus, ifAbsent: () => value);
+          if (!_clearedDuringWrite.contains(null)) {
+            for (final MapEntry(:key, :value) in batch.entries) {
+              if (_clearedDuringWrite.contains(key.$3)) {
+                continue;
+              }
+              if (_pending.containsKey(key)) {
+                _pending.update(key, value.plus);
+              } else if (_pending.length < _maxPendingEntries) {
+                _pending[key] = value;
+              }
+            }
           }
           Error.throwWithStackTrace(error, stack);
         })
-        .whenComplete(() => _writing = null);
+        .whenComplete(() {
+          _clearedDuringWrite.clear();
+          _writing = null;
+        });
   }
 
   void _record(
@@ -140,7 +201,14 @@ class AppTrafficTracker {
       proxy,
       provider,
     );
-    _pending.update(key, (old) => old.plus(delta), ifAbsent: () => delta);
+    if (_pending.containsKey(key)) {
+      _pending.update(key, (old) => old.plus(delta));
+      return;
+    }
+    if (_pending.length >= _maxPendingEntries) {
+      _pending.remove(_pending.keys.first);
+    }
+    _pending[key] = delta;
   }
 
   _ApplicationIdentity _applicationIdentity(Metadata metadata) {
@@ -156,9 +224,12 @@ class AppTrafficTracker {
     }
     final process = metadata.process.trim();
     if (path.isNotEmpty) {
+      final fallback = path
+          .split(_pathSeparatorPattern)
+          .lastWhere((segment) => segment.isNotEmpty, orElse: () => path);
       return _ApplicationIdentity(
         id: path,
-        label: process.isEmpty ? path.split('/').last : process,
+        label: process.isEmpty ? fallback : process,
       );
     }
     if (process.isNotEmpty) {
@@ -174,6 +245,7 @@ class _TrackedConnection {
   _ApplicationIdentity? identity;
   int upload = 0;
   int download = 0;
+  int lastSeenSeq = 0;
 
   _TrackedConnection(this.connection, this.profile);
 }

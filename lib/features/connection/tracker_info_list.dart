@@ -89,6 +89,7 @@ class TrackerInfoList extends StatelessWidget {
       padding: padding,
       items: trackerInfos,
       keyOf: (trackerInfo) => ValueKey(trackerInfo.id),
+      preserveStripes: !(table?.sorted ?? false),
       gap: table == null ? recordListGap : 0,
       itemExtent: table?.rowHeight,
       estimatedItemExtent: table?.rowHeight ?? recordListEstimatedExtent,

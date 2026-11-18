@@ -57,7 +57,17 @@ typedef AppTrafficBucket = ({
   int download,
 });
 
-enum AppTrafficSort { total, upload, download }
+enum AppTrafficSort {
+  total,
+  upload,
+  download;
+
+  int amount({required int upload, required int download}) => switch (this) {
+    AppTrafficSort.total => upload + download,
+    AppTrafficSort.upload => upload,
+    AppTrafficSort.download => download,
+  };
+}
 
 class AppTrafficUsage {
   final String applicationId;

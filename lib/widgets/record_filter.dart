@@ -35,6 +35,9 @@ class RecordFilterController<T> extends ValueNotifier<RecordFilterState> {
   final _keywords = ValueNotifier<List<ScaffoldKeyword>>(const []);
   final _pinnedKeywords = ValueNotifier<List<ScaffoldKeyword>>(const []);
   final options = ValueNotifier<RecordFacetOptions>(const {});
+  List<T>? _filteredSource;
+  List<RecordFilter>? _filteredBy;
+  List<T> _filtered = const [];
 
   RecordFilterController({
     required this.facets,
@@ -158,8 +161,20 @@ class RecordFilterController<T> extends ValueNotifier<RecordFilterState> {
     }
   }
 
-  List<T> apply(List<T> items) =>
-      isFiltering ? items.whereFilters(facets, filters).toList() : items;
+  List<T> apply(List<T> items) {
+    if (!isFiltering) {
+      _filteredSource = null;
+      _filteredBy = null;
+      _filtered = const [];
+      return items;
+    }
+    if (identical(_filteredSource, items) && identical(_filteredBy, filters)) {
+      return _filtered;
+    }
+    _filteredSource = items;
+    _filteredBy = filters;
+    return _filtered = items.whereFilters(facets, filters).toList();
+  }
 
   List<RecordGroup<T>>? groupsOf(List<T> items, {bool reverse = false}) {
     final keyOf = grouper?.keyOf;

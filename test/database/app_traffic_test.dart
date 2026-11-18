@@ -197,15 +197,15 @@ void main() {
       daily.map((slice) => (slice.applicationId, slice.upload, slice.download)),
       [('browser', 18, 3), ('sync', 1, 30)],
     );
-    final monthly = await dao
+    final allRange = await dao
         .queryTimeline(profileId: 1, until: tomorrow)
         .get();
     expect(
-      monthly.map((slice) => slice.index),
-      everyElement(day.year * 100 + day.month),
+      allRange.map((slice) => slice.index),
+      everyElement(day.millisecondsSinceEpoch),
     );
     expect(
-      monthly.map(
+      allRange.map(
         (slice) => (slice.applicationId, slice.upload, slice.download),
       ),
       [('browser', 18, 3), ('sync', 1, 30)],
@@ -303,6 +303,145 @@ void main() {
       expect(await database.appTrafficDao.clear(profileId: 1), 2);
       final remaining = await database.appTrafficDao.queryUsage().get();
       expect(remaining.single.applicationId, 'other-plan');
+    },
+  );
+
+  test(
+    'queryTimeline ranks top 3 by the requested sort metric and excludes zeros',
+    () async {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final dao = database.appTrafficDao;
+      await dao.addAll([
+        delta(
+          day: today,
+          profileId: 1,
+          applicationId: 'downloader',
+          applicationLabel: 'Downloader',
+          upload: 0,
+          download: 1000,
+          hour: 9,
+        ),
+        delta(
+          day: today,
+          profileId: 1,
+          applicationId: 'up1',
+          applicationLabel: 'Uploader 1',
+          upload: 300,
+          download: 10,
+          hour: 9,
+        ),
+        delta(
+          day: today,
+          profileId: 1,
+          applicationId: 'up2',
+          applicationLabel: 'Uploader 2',
+          upload: 200,
+          download: 10,
+          hour: 9,
+        ),
+        delta(
+          day: today,
+          profileId: 1,
+          applicationId: 'up3',
+          applicationLabel: 'Uploader 3',
+          upload: 100,
+          download: 10,
+          hour: 9,
+        ),
+        delta(
+          day: today,
+          profileId: 1,
+          applicationId: 'up4',
+          applicationLabel: 'Uploader 4',
+          upload: 50,
+          download: 10,
+          hour: 9,
+        ),
+      ]);
+
+      final byUpload = await dao
+          .queryTimeline(
+            profileId: 1,
+            since: today,
+            hourly: true,
+            sort: AppTrafficSort.upload,
+          )
+          .get();
+      expect(
+        byUpload.map(
+          (slice) => (slice.applicationId, slice.upload, slice.download),
+        ),
+        [
+          (null, 50, 1010),
+          ('up1', 300, 10),
+          ('up2', 200, 10),
+          ('up3', 100, 10),
+        ],
+      );
+
+      final byDownload = await dao
+          .queryTimeline(
+            profileId: 1,
+            since: today,
+            sort: AppTrafficSort.download,
+          )
+          .get();
+      expect(byDownload.map((slice) => slice.applicationId).toSet(), {
+        'downloader',
+        'up1',
+        'up2',
+        null,
+      });
+    },
+  );
+
+  test(
+    'clamps asymmetric legacy differences and ensures profile-day index exists',
+    () async {
+      final now = DateTime.now();
+      final day = DateTime(now.year, now.month, now.day);
+      final dayMs = day.millisecondsSinceEpoch;
+      await database.customStatement(
+        'INSERT INTO app_traffic_records '
+        '(day, profile_id, profile_label, application_id, application_label, '
+        'process_path, proxy, provider, upload, download, updated_at) '
+        "VALUES (?, 1, 'P1', 'app', 'App', '', 'Proxy', '', 10, 0, 0)",
+        [dayMs],
+      );
+      await database.customStatement(
+        'INSERT INTO app_traffic_hours_by_app '
+        '(day, profile_id, hour, application_id, application_label, upload, download) '
+        "VALUES (?, 1, 8, 'app', 'App', 4, 5)",
+        [dayMs],
+      );
+
+      final slices = await database.appTrafficDao
+          .queryTimeline(profileId: 1, since: day, hourly: true)
+          .get();
+      expect(slices.first, (
+        index: -1,
+        applicationId: null,
+        applicationLabel: '',
+        upload: 6,
+        download: 0,
+      ));
+
+      final indexes = await database
+          .customSelect("PRAGMA index_list('app_traffic_records')")
+          .get();
+      expect(
+        indexes.map((row) => row.read<String>('name')),
+        contains('idx_app_traffic_profile_day'),
+      );
+
+      final clearedProfiles = <int?>[];
+      void listener(int? profileId) => clearedProfiles.add(profileId);
+      database.appTrafficDao.addClearListener(listener);
+      await database.appTrafficDao.clear(profileId: 1);
+      database.appTrafficDao.removeClearListener(listener);
+      await database.appTrafficDao.clear();
+      expect(clearedProfiles, [1]);
     },
   );
 }

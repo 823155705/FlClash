@@ -203,7 +203,9 @@ class _DnsQueriesViewState extends ConsumerState<DnsQueriesView>
                     ),
                     items: dnsQueries,
                     keyOf: ObjectKey.new,
+                    preserveStripes: !(table?.sorted ?? false),
                     gap: table == null ? recordListGap : 0,
+                    itemExtent: table?.rowHeight,
                     estimatedItemExtent:
                         table?.rowHeight ?? recordListEstimatedExtent,
                     itemBuilder: (dnsQuery, striped, _) => MemoBuilder(

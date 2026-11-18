@@ -10,6 +10,27 @@ import 'tracker_info_item.dart';
 
 const _fullLiveTableWidth = 1200.0;
 
+final _metadataSortKeys =
+    Expando<({String process, String target, String network})>();
+final _trackerSortKeys = Expando<({String rule, String exit})>();
+
+({String process, String target, String network}) _metadataKeysOf(
+  TrackerInfo info,
+) {
+  final metadata = info.metadata;
+  return _metadataSortKeys[metadata] ??= (
+    process: info.progressText.toLowerCase(),
+    target: info.title.toLowerCase(),
+    network: metadata.network.toLowerCase(),
+  );
+}
+
+({String rule, String exit}) _trackerKeysOf(TrackerInfo info) =>
+    _trackerSortKeys[info] ??= (
+      rule: '${info.rule} ${info.rulePayload}'.toLowerCase(),
+      exit: (info.chains.firstOrNull ?? '').toLowerCase(),
+    );
+
 List<RecordColumn<TrackerInfo>> trackerInfoColumns(
   BuildContext context, {
   required double width,
@@ -32,12 +53,12 @@ List<RecordColumn<TrackerInfo>> trackerInfoColumns(
     RecordColumn(
       TableColumn('process', appLocalizations.process, width: wide ? 160 : 140),
       cell: (_, info) => RecordCellText(info.progressText),
-      sortKey: (info) => info.progressText.toLowerCase(),
+      sortKey: (info) => _metadataKeysOf(info).process,
     ),
     RecordColumn(
       TableColumn('target', appLocalizations.target, flex: wide ? 1.4 : 1.3),
       cell: (_, info) => TrackerTargetText(info),
-      sortKey: (info) => info.title.toLowerCase(),
+      sortKey: (info) => _metadataKeysOf(info).target,
     ),
     if (detailed)
       RecordColumn(
@@ -48,18 +69,18 @@ List<RecordColumn<TrackerInfo>> trackerInfoColumns(
         ),
         cell: (_, info) =>
             RecordCellText(info.metadata.network.toUpperCase(), muted: true),
-        sortKey: (info) => info.metadata.network.toLowerCase(),
+        sortKey: (info) => _metadataKeysOf(info).network,
       ),
     if (wide || !isLive)
       RecordColumn(
         TableColumn('rule', appLocalizations.rule, flex: 1),
         cell: (_, info) => TrackerRuleText(info),
-        sortKey: (info) => '${info.rule} ${info.rulePayload}'.toLowerCase(),
+        sortKey: (info) => _trackerKeysOf(info).rule,
       ),
     RecordColumn(
       TableColumn('exit', appLocalizations.outboundExit, width: 120),
       cell: (_, info) => _ExitChip(exit: info.chains.firstOrNull ?? ''),
-      sortKey: (info) => (info.chains.firstOrNull ?? '').toLowerCase(),
+      sortKey: (info) => _trackerKeysOf(info).exit,
     ),
     if (isLive) ...[
       _amountColumn(

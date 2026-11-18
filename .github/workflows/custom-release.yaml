@@ -106,6 +106,15 @@ jobs:
       - name: Disable Impeller on Intel macOS
         if: matrix.name == 'macos-amd64'
         run: plutil -replace FLTEnableImpeller -bool NO macos/Runner/Info.plist
+      - name: Fetch CA certificates
+        shell: bash
+        env:
+          CA_BUNDLE: cacert-2026-09-25.pem
+          CA_BUNDLE_SHA256: a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505
+        run: |
+          bundle=core/Clash.Meta/component/ca/ca-certificates.crt
+          curl -fsSL --retry 3 -o "$bundle" "https://curl.se/ca/$CA_BUNDLE"
+          echo "$CA_BUNDLE_SHA256  $bundle" | sha256sum -c -
       - name: Package and check the installer
         shell: bash
         env:

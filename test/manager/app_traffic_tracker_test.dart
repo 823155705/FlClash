@@ -152,4 +152,110 @@ void main() {
       expect(persisted.single.download, 4);
     },
   );
+
+  test(
+    'does not double count late events after clearConnections on disconnect',
+    () async {
+      final persisted = <AppTrafficDelta>[];
+      final tracker = AppTrafficTracker(
+        persist: (deltas) async => persisted.addAll(deltas),
+        resolveProfile: () =>
+            const AppTrafficProfileContext(id: 1, label: 'Plan'),
+      );
+
+      tracker.observeStart(connection(id: 'a', upload: 0, download: 0));
+      tracker.observeChanges({'a': (upload: 500, download: 900)});
+      await tracker.flush();
+
+      tracker.clearConnections();
+      tracker.observeClosed(connection(id: 'a', upload: 500, download: 900));
+      tracker.observeStart(connection(id: 'a', upload: 500, download: 900));
+      await tracker.flush();
+
+      expect(persisted, hasLength(1));
+      expect(persisted.single.upload, 500);
+      expect(persisted.single.download, 900);
+    },
+  );
+
+  test(
+    'snapshotToken prunes stale closed connections while preserving newer ones',
+    () async {
+      final persisted = <AppTrafficDelta>[];
+      final tracker = AppTrafficTracker(
+        persist: (deltas) async => persisted.addAll(deltas),
+        resolveProfile: () =>
+            const AppTrafficProfileContext(id: 1, label: 'Plan'),
+      );
+
+      tracker.observeStart(connection(id: 'stale', upload: 10, download: 20));
+      final token = tracker.beginSnapshot();
+      tracker.observeStart(connection(id: 'fresh', upload: 5, download: 15));
+
+      await tracker.observeSnapshot(const [], snapshotToken: token);
+
+      tracker.observeClosed(connection(id: 'stale', upload: 10, download: 20));
+      tracker.observeClosed(connection(id: 'fresh', upload: 8, download: 20));
+      await tracker.flush();
+
+      final totalUpload = persisted.fold(0, (sum, d) => sum + d.upload);
+      final totalDownload = persisted.fold(0, (sum, d) => sum + d.download);
+      expect(totalUpload, 18);
+      expect(totalDownload, 40);
+    },
+  );
+
+  test(
+    'clearPending drops matching profile deltas even across failed in-flight flushes',
+    () async {
+      final persisted = <AppTrafficDelta>[];
+      var fail = true;
+      late Future<void> inFlightFlush;
+      final tracker = AppTrafficTracker(
+        persist: (deltas) async {
+          if (fail) throw StateError('db locked');
+          persisted.addAll(deltas);
+        },
+        resolveProfile: () =>
+            const AppTrafficProfileContext(id: 1, label: 'Plan'),
+      );
+
+      tracker.observeClosed(connection(id: 'a', upload: 100, download: 200));
+      expect(tracker.hasPending, isTrue);
+
+      inFlightFlush = tracker.flush();
+      tracker.clearPending(profileId: 1);
+      await expectLater(inFlightFlush, throwsStateError);
+      expect(tracker.hasPending, isFalse);
+
+      fail = false;
+      await tracker.flush();
+      expect(persisted, isEmpty);
+    },
+  );
+
+  test('extracts Windows executable name when process is empty', () async {
+    final persisted = <AppTrafficDelta>[];
+    final tracker = AppTrafficTracker(
+      persist: (deltas) async => persisted.addAll(deltas),
+      resolveProfile: () =>
+          const AppTrafficProfileContext(id: 1, label: 'Plan'),
+    );
+
+    tracker.observeClosed(
+      connection(
+        id: 'win',
+        upload: 10,
+        download: 20,
+        process: '',
+        processPath: r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+      ),
+    );
+    await tracker.flush();
+
+    expect(persisted.single.applicationLabel, 'chrome.exe');
+    expect(AppTrafficSort.upload.amount(upload: 10, download: 20), 10);
+    expect(AppTrafficSort.download.amount(upload: 10, download: 20), 20);
+    expect(AppTrafficSort.total.amount(upload: 10, download: 20), 30);
+  });
 }

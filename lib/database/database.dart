@@ -133,6 +133,10 @@ class Database extends _$Database {
       }),
       beforeOpen: (_) async {
         await _createTableIfMissing(createMigrator(), appTrafficRecords);
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS idx_app_traffic_profile_day '
+          'ON app_traffic_records (profile_id, day)',
+        );
         await _createTableIfMissing(createMigrator(), appTrafficHours);
         await customStatement('PRAGMA foreign_keys = ON');
       },

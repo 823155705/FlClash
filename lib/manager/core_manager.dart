@@ -53,10 +53,7 @@ class _CoreContainerState extends ConsumerState<CoreManager>
   void initState() {
     super.initState();
     coreEventManager.addListener(this);
-    _trafficTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => unawaited(_captureAppTraffic()),
-    );
+    database.appTrafficDao.addClearListener(_onTrafficCleared);
     ref.read(updatingActionProvider.notifier);
     // A rejected profile stays selected on purpose: silently reverting to
     // the previous one hides the error and looks like the switch was lost.
@@ -115,11 +112,53 @@ class _CoreContainerState extends ConsumerState<CoreManager>
         _trafficEpoch++;
         _trafficTracker.clearConnections();
         _ticksUntilSnapshot = 0;
+        unawaited(_flushAppTraffic().whenComplete(_syncTrafficTimer));
       }
       if (next == CoreStatus.connected && prev != CoreStatus.connected) {
         _syncLogStream();
       }
+      _syncTrafficTimer();
     }, fireImmediately: true);
+  }
+
+  void _onTrafficCleared(int? profileId) {
+    _trafficTracker.clearPending(profileId: profileId);
+    _syncTrafficTimer();
+  }
+
+  void _resumeTrafficTimerIfNeeded() {
+    if (_trafficTimer == null && _trafficTracker.hasPending) {
+      _syncTrafficTimer();
+    }
+  }
+
+  void _syncTrafficTimer() {
+    if (!mounted) {
+      return;
+    }
+    final shouldRun =
+        ref.read(coreStatusProvider) == CoreStatus.connected ||
+        _trafficTracker.hasPending;
+    if (shouldRun) {
+      _trafficTimer ??= Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => unawaited(_captureAppTraffic()),
+      );
+      return;
+    }
+    _trafficTimer?.cancel();
+    _trafficTimer = null;
+  }
+
+  Future<void> _flushAppTraffic() async {
+    try {
+      await _trafficTracker.flush();
+    } catch (error) {
+      commonPrint.log(
+        'capture app traffic error: $error',
+        logLevel: coreFailureLogLevel(error),
+      );
+    }
   }
 
   void _syncLogStream() {
@@ -136,7 +175,10 @@ class _CoreContainerState extends ConsumerState<CoreManager>
   @override
   void dispose() {
     _trafficTimer?.cancel();
+    _trafficTimer = null;
+    database.appTrafficDao.removeClearListener(_onTrafficCleared);
     coreEventManager.removeListener(this);
+    unawaited(_flushAppTraffic());
     super.dispose();
   }
 
@@ -151,9 +193,13 @@ class _CoreContainerState extends ConsumerState<CoreManager>
         // Bulk events can be dropped when their queue fills.
         _ticksUntilSnapshot = 14;
         final epoch = _trafficEpoch;
+        final snapshotToken = _trafficTracker.beginSnapshot();
         final connections = await _core.getConnections();
         if (mounted && epoch == _trafficEpoch) {
-          await _trafficTracker.observeSnapshot(connections);
+          await _trafficTracker.observeSnapshot(
+            connections,
+            snapshotToken: snapshotToken,
+          );
         }
       } else {
         await _trafficTracker.flush();
@@ -165,12 +211,14 @@ class _CoreContainerState extends ConsumerState<CoreManager>
       );
     } finally {
       _trafficCaptureRunning = false;
+      _syncTrafficTimer();
     }
   }
 
   @override
   void onConnectionClosed(TrackerInfo trackerInfo) {
     _trafficTracker.observeClosed(trackerInfo);
+    _resumeTrafficTimerIfNeeded();
   }
 
   @override
@@ -214,6 +262,7 @@ class _CoreContainerState extends ConsumerState<CoreManager>
   @override
   void onRequest(TrackerInfo trackerInfo) async {
     _trafficTracker.observeStart(trackerInfo);
+    _resumeTrafficTimerIfNeeded();
     ref.read(requestsProvider.notifier).addRequest(trackerInfo);
     ref.read(requestCountProvider.notifier).update((count) => count + 1);
     super.onRequest(trackerInfo);
@@ -222,6 +271,7 @@ class _CoreContainerState extends ConsumerState<CoreManager>
   @override
   void onRequestTraffic(Map<String, RequestTraffic> traffic) {
     _trafficTracker.observeChanges(traffic);
+    _resumeTrafficTimerIfNeeded();
     ref.read(requestsProvider.notifier).updateTraffic(traffic);
     super.onRequestTraffic(traffic);
   }
