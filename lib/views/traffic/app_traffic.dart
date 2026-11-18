@@ -15,6 +15,13 @@ part 'traffic_chart.dart';
 
 enum AppTrafficRange { today, sevenDays, all }
 
+typedef _TrafficTimeline = ({
+  int profileId,
+  DateTime day,
+  AppTrafficRange range,
+  List<AppTrafficBucket> buckets,
+});
+
 class AppTrafficView extends ConsumerStatefulWidget {
   final AppTrafficDao? trafficDao;
 
@@ -33,7 +40,7 @@ class _AppTrafficViewState extends ConsumerState<AppTrafficView> {
   late final AppLifecycleListener _lifecycle;
   Timer? _midnight;
   late Stream<List<AppTrafficUsage>> _usage;
-  late Stream<List<AppTrafficBucket>> _timeline;
+  late Stream<_TrafficTimeline> _timeline;
 
   AppTrafficDao get _dao => widget.trafficDao ?? database.appTrafficDao;
   int? get _selectedProfile => _profileId == _allProfiles ? null : _profileId;
@@ -86,14 +93,21 @@ class _AppTrafficViewState extends ConsumerState<AppTrafficView> {
 
   void _subscribeScope() {
     _subscribeUsage();
+    final profileId = _profileId;
+    final day = _today;
+    final range = _range;
     _timeline = _dao
         .queryTimeline(
           profileId: _selectedProfile,
           since: _since,
           until: _tomorrow,
-          hourly: _range == AppTrafficRange.today,
+          hourly: range == AppTrafficRange.today,
         )
-        .watch();
+        .watch()
+        .map(
+          (buckets) =>
+              (profileId: profileId, day: day, range: range, buckets: buckets),
+        );
   }
 
   void _subscribeUsage() {
@@ -132,134 +146,152 @@ class _AppTrafficViewState extends ConsumerState<AppTrafficView> {
           onPressed: _clear,
         ),
       ],
-      body: Builder(
-        builder: (context) => StreamBuilder<List<AppTrafficUsage>>(
-          key: ValueKey((_profileId, _today, _range)),
-          stream: _usage,
-          builder: (context, snapshot) {
-            final usages = snapshot.data ?? const <AppTrafficUsage>[];
-            var maximum = 0;
-            for (final usage in usages) {
-              final amount = _sort.amountOf(usage);
-              if (amount > maximum) maximum = amount;
-            }
-            final header = Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                spacing: 16,
-                children: [
-                  ListItem<int>.options(
-                    title: Text(l10n.profiles),
-                    leading: const GlyphIcon(AppGlyphs.profiles),
-                    options: [
-                      _allProfiles,
-                      ...profiles.map((profile) => profile.id),
-                    ],
-                    value: _profileId,
-                    textBuilder: (id) =>
-                        profiles
-                            .where((profile) => profile.id == id)
-                            .firstOrNull
-                            ?.label ??
-                        l10n.allSubscriptions,
-                    onChanged: (id) => setState(() {
-                      _profileId = id;
-                      _subscribeScope();
-                    }),
-                  ),
-                  SegmentedControl<AppTrafficRange>(
-                    segments: [
-                      (AppTrafficRange.today, l10n.today),
-                      (AppTrafficRange.sevenDays, l10n.lastSevenDays),
-                      (AppTrafficRange.all, l10n.allTime),
-                    ],
-                    value: _range,
-                    onChanged: (range) => setState(() {
-                      _range = range;
-                      _subscribeScope();
-                    }),
-                  ),
-                  StreamBuilder<List<AppTrafficBucket>>(
-                    stream: _timeline,
-                    builder: (context, trend) => _TrafficOverview(
-                      range: _range,
-                      today: _today,
-                      timeline: trend.data ?? const [],
-                    ),
-                  ),
-                  Text(
-                    l10n.appTrafficScope,
-                    style: AppTextStyle.footnote
-                        .of(context)
-                        .copyWith(color: context.colorScheme.onSurfaceVariant),
-                  ),
-                  Semantics(
-                    label: l10n.sort,
-                    child: SegmentedControl<AppTrafficSort>(
-                      segments: [
-                        (AppTrafficSort.total, l10n.totalTraffic),
-                        (AppTrafficSort.upload, l10n.upload),
-                        (AppTrafficSort.download, l10n.download),
+      body: StreamBuilder<_TrafficTimeline>(
+        stream: _timeline,
+        builder: (context, trend) {
+          final timeline = trend.data;
+          final swatches = _trafficSwatches(
+            context,
+            timeline?.buckets ?? const [],
+          );
+          return StreamBuilder<List<AppTrafficUsage>>(
+            stream: _usage,
+            builder: (context, snapshot) {
+              final usages = snapshot.data ?? const <AppTrafficUsage>[];
+              var maximum = 0;
+              for (final usage in usages) {
+                final amount = _sort.amountOf(usage);
+                if (amount > maximum) maximum = amount;
+              }
+              final header = Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 16,
+                  children: [
+                    ListItem<int>.options(
+                      title: Text(l10n.profiles),
+                      leading: const GlyphIcon(AppGlyphs.profiles),
+                      options: [
+                        _allProfiles,
+                        ...profiles.map((profile) => profile.id),
                       ],
-                      value: _sort,
-                      onChanged: (sort) => setState(() {
-                        _sort = sort;
-                        _subscribeUsage();
+                      value: _profileId,
+                      textBuilder: (id) =>
+                          profiles
+                              .where((profile) => profile.id == id)
+                              .firstOrNull
+                              ?.label ??
+                          l10n.allSubscriptions,
+                      onChanged: (id) => setState(() {
+                        _profileId = id;
+                        _subscribeScope();
                       }),
                     ),
+                    SegmentedControl<AppTrafficRange>(
+                      segments: [
+                        (AppTrafficRange.today, l10n.today),
+                        (AppTrafficRange.sevenDays, l10n.lastSevenDays),
+                        (AppTrafficRange.all, l10n.allTime),
+                      ],
+                      value: _range,
+                      onChanged: (range) => setState(() {
+                        _range = range;
+                        _subscribeScope();
+                      }),
+                    ),
+                    if (timeline != null)
+                      FadeThroughBox(
+                        alignment: Alignment.topCenter,
+                        child: _TrafficOverview(
+                          key: ValueKey((
+                            timeline.profileId,
+                            timeline.day,
+                            timeline.range,
+                          )),
+                          data: timeline,
+                          swatches: swatches,
+                        ),
+                      ),
+                    Text(
+                      l10n.appTrafficScope,
+                      style: AppTextStyle.footnote
+                          .of(context)
+                          .copyWith(
+                            color: context.colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    Semantics(
+                      label: l10n.sort,
+                      child: SegmentedControl<AppTrafficSort>(
+                        segments: [
+                          (AppTrafficSort.total, l10n.totalTraffic),
+                          (AppTrafficSort.upload, l10n.upload),
+                          (AppTrafficSort.download, l10n.download),
+                        ],
+                        value: _sort,
+                        onChanged: (sort) => setState(() {
+                          _sort = sort;
+                          _subscribeUsage();
+                        }),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+              return CustomScrollView(
+                slivers: [
+                  SliverPadding(
+                    padding: EdgeInsets.only(
+                      top: MediaQuery.paddingOf(context).top,
+                    ),
+                    sliver: SliverToBoxAdapter(child: header),
+                  ),
+                  if (snapshot.hasError)
+                    SliverToBoxAdapter(child: Text(snapshot.error.toString()))
+                  else if (!snapshot.hasData &&
+                      snapshot.connectionState == ConnectionState.waiting)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: LinearProgressIndicator(),
+                      ),
+                    )
+                  else if (usages.isEmpty)
+                    SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: 240,
+                        child: NullStatus(
+                          label: l10n.noAppTraffic,
+                          illustration: NullStatusIllustration.apps,
+                        ),
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      sliver: SliverPrismList(
+                        itemCount: usages.length,
+                        estimatedItemExtent: 96,
+                        gap: 8,
+                        itemBuilder: (_, index) => _AppTrafficItem(
+                          usage: usages[index],
+                          sort: _sort,
+                          maxTraffic: maximum,
+                          color:
+                              swatches[usages[index].applicationId] ??
+                              swatches[null]!,
+                        ),
+                      ),
+                    ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(height: context.bottomInset + 32),
                   ),
                 ],
-              ),
-            );
-            return CustomScrollView(
-              slivers: [
-                SliverPadding(
-                  padding: EdgeInsets.only(
-                    top: MediaQuery.paddingOf(context).top,
-                  ),
-                  sliver: SliverToBoxAdapter(child: header),
-                ),
-                if (snapshot.hasError)
-                  SliverToBoxAdapter(child: Text(snapshot.error.toString()))
-                else if (!snapshot.hasData &&
-                    snapshot.connectionState == ConnectionState.waiting)
-                  const SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: LinearProgressIndicator(),
-                    ),
-                  )
-                else if (usages.isEmpty)
-                  SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: 240,
-                      child: NullStatus(
-                        label: l10n.noAppTraffic,
-                        illustration: NullStatusIllustration.apps,
-                      ),
-                    ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverPrismList(
-                      itemCount: usages.length,
-                      estimatedItemExtent: 82,
-                      itemBuilder: (_, index) => _AppTrafficItem(
-                        usage: usages[index],
-                        sort: _sort,
-                        maxTraffic: maximum,
-                      ),
-                    ),
-                  ),
-                SliverToBoxAdapter(
-                  child: SizedBox(height: context.bottomInset + 32),
-                ),
-              ],
-            );
-          },
-        ),
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -274,20 +306,20 @@ extension on AppTrafficSort {
 }
 
 class _TrafficOverview extends StatelessWidget {
-  final AppTrafficRange range;
-  final DateTime today;
-  final List<AppTrafficBucket> timeline;
+  final _TrafficTimeline data;
+  final Map<String?, Color> swatches;
 
   const _TrafficOverview({
-    required this.range,
-    required this.today,
-    required this.timeline,
+    super.key,
+    required this.data,
+    required this.swatches,
   });
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.appLocalizations;
     final colors = context.colorScheme;
+    final timeline = data.buckets;
     var upload = 0;
     var download = 0;
     for (final bucket in timeline) {
@@ -296,42 +328,57 @@ class _TrafficOverview extends StatelessWidget {
     }
     final legacy = timeline.firstOrNull?.index == -1 ? timeline.first : null;
     final slices = legacy == null ? timeline : timeline.skip(1).toList();
-    return Card(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: 12,
-        children: [
-          Text(l10n.totalTraffic, style: AppTextStyle.subheadline.of(context)),
-          Text(
-            (upload + download).traffic.show,
-            style: AppTextStyle.largeTitle.of(context),
-          ),
-          if (slices.isNotEmpty)
-            _TrafficChart(bars: _trafficBars(range, today, slices)),
-          Wrap(
-            spacing: 20,
-            runSpacing: 8,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 12,
+      children: [
+        Card(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 8,
             children: [
               Text(
-                '${l10n.upload} ${upload.traffic.show}',
-                style: AppTextStyle.footnote.of(context),
+                l10n.totalTraffic,
+                style: AppTextStyle.subheadline.of(context),
               ),
               Text(
-                '${l10n.download} ${download.traffic.show}',
-                style: AppTextStyle.footnote.of(context),
+                (upload + download).traffic.show,
+                style: AppTextStyle.largeTitle.of(context),
               ),
+              Wrap(
+                spacing: 20,
+                runSpacing: 8,
+                children: [
+                  Text(
+                    '${l10n.upload} ${upload.traffic.show}',
+                    style: AppTextStyle.footnote.of(context),
+                  ),
+                  Text(
+                    '${l10n.download} ${download.traffic.show}',
+                    style: AppTextStyle.footnote.of(context),
+                  ),
+                ],
+              ),
+              if (legacy != null)
+                Text(
+                  '${l10n.appTrafficUnbucketed} · ${(legacy.upload + legacy.download).traffic.show}',
+                  style: AppTextStyle.footnote
+                      .of(context)
+                      .copyWith(color: colors.onSurfaceVariant),
+                ),
             ],
           ),
-          if (legacy != null)
-            Text(
-              '${l10n.appTrafficUnbucketed} · ${(legacy.upload + legacy.download).traffic.show}',
-              style: AppTextStyle.footnote
-                  .of(context)
-                  .copyWith(color: colors.onSurfaceVariant),
+        ),
+        if (slices.isNotEmpty)
+          Card(
+            padding: const EdgeInsets.all(16),
+            child: _TrafficChart(
+              bars: _trafficBars(data.range, data.day, slices),
+              swatches: swatches,
             ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 }
@@ -340,11 +387,13 @@ class _AppTrafficItem extends StatelessWidget {
   final AppTrafficUsage usage;
   final AppTrafficSort sort;
   final int maxTraffic;
+  final Color color;
 
   const _AppTrafficItem({
     required this.usage,
     required this.sort,
     required this.maxTraffic,
+    required this.color,
   });
 
   @override
@@ -355,14 +404,17 @@ class _AppTrafficItem extends StatelessWidget {
         : usage.applicationLabel;
     final amount = sort.amountOf(usage);
     final routes = {...usage.providers, ...usage.proxies}.take(4).join(' · ');
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    final theme = Theme.of(context);
+    return Card(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         spacing: 6,
         children: [
           Row(
+            spacing: 8,
             children: [
+              _TrafficSwatch(color: color),
               Expanded(
                 child: Text(
                   label,
@@ -377,8 +429,14 @@ class _AppTrafficItem extends StatelessWidget {
               ),
             ],
           ),
-          LinearProgressIndicator(
-            value: maxTraffic == 0 ? 0 : amount / maxTraffic,
+          Theme(
+            data: theme.copyWith(
+              colorScheme: theme.colorScheme.copyWith(primary: color),
+            ),
+            child: LinearProgressIndicator(
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              value: maxTraffic == 0 ? 0 : amount / maxTraffic,
+            ),
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,

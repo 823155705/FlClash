@@ -8,7 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:prism_ui/card.dart';
 import 'package:prism_ui/segmented_control.dart';
+import 'package:prism_ui/shape.dart';
 import 'package:prism_ui/tooltip.dart';
 
 import '../helpers/test_app.dart';
@@ -51,7 +53,7 @@ void main() {
       ),
       AppTrafficDelta(
         day: DateTime(now.year, now.month, now.day),
-        hour: 18,
+        hour: 6,
         profileId: 1,
         profileLabel: 'Test plan',
         applicationId: 'sync',
@@ -90,30 +92,64 @@ void main() {
     expect(find.text('Test plan').hitTestable(), findsOneWidget);
     expect(find.text('App Traffic'), findsOneWidget);
     expect(find.text('00:00'), findsOneWidget);
-    Finder barAt(String time) => find.byWidgetPredicate(
-      (widget) => widget is Tooltip && widget.message.startsWith(time),
+    Finder segmentOf(String app) => find.byWidgetPredicate(
+      (widget) => widget is Tooltip && widget.message.startsWith('$app\n'),
     );
-    Finder markerOf(Finder bar) =>
-        find.descendant(of: bar, matching: find.byType(ColoredBox)).first;
-    final hour = barAt('06:00');
-    final marker = markerOf(hour);
-    expect(
-      tester.widget<ColoredBox>(marker).color,
-      isNot(tester.widget<ColoredBox>(markerOf(barAt('18:00'))).color),
-    );
+    Finder markerOf(Finder segment) =>
+        find.descendant(of: segment, matching: find.byType(ColoredBox)).first;
+    Color markerColor(Finder segment) =>
+        tester.widget<ColoredBox>(markerOf(segment)).color;
+    Color rowColor(String app) {
+      final card = find.ancestor(
+        of: find.text(app),
+        matching: find.byType(Card),
+      );
+      final swatch = tester.widget<DecoratedBox>(
+        find.descendant(
+          of: card,
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is DecoratedBox &&
+                widget.decoration is ShapeDecoration &&
+                (widget.decoration as ShapeDecoration).shape == AppShape.circle,
+          ),
+        ),
+      );
+      return (swatch.decoration as ShapeDecoration).color!;
+    }
+
+    final browser = segmentOf('Google Chrome');
+    final sync = segmentOf('Cloud Sync');
+    final browserColor = markerColor(browser);
+    final syncColor = markerColor(sync);
+    expect(browserColor, isNot(syncColor));
+    expect(browserColor, rowColor('Google Chrome'));
+    expect(syncColor, rowColor('Cloud Sync'));
+
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await mouse.addPointer(location: tester.getCenter(hour));
+    await mouse.addPointer(location: tester.getCenter(browser));
     await tester.pumpAndSettle();
-    expect(find.textContaining('06:00\n'), findsOneWidget);
-    expect(find.textContaining('100.0%'), findsOneWidget);
+    expect(find.text('Google Chrome\n300B · 62.5%'), findsOneWidget);
+    expect(markerColor(browser), browserColor);
+    final muted = markerColor(sync);
+    expect(muted, isNot(syncColor));
+    expect(HSLColor.fromColor(muted).saturation, 0);
+
+    await mouse.moveTo(tester.getCenter(sync));
+    await tester.pumpAndSettle();
+    expect(find.text('Cloud Sync\n180B · 37.5%'), findsOneWidget);
+    expect(markerColor(sync), syncColor);
+    expect(markerColor(browser), muted);
     await mouse.removePointer();
     await tester.pumpAndSettle();
+    expect(markerColor(browser), browserColor);
+    expect(markerColor(sync), syncColor);
 
-    await tester.tap(hour);
+    await tester.tap(browser);
     await tester.pumpAndSettle();
-    final selected = find.textContaining('06:00 ·');
+    final selected = find.textContaining('06:00 · Google Chrome ·');
     expect(selected, findsOneWidget);
-    Focus.of(tester.element(marker)).requestFocus();
+    Focus.of(tester.element(markerOf(browser))).requestFocus();
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
@@ -135,9 +171,15 @@ void main() {
     await tester.tap(
       find.descendant(of: range, matching: find.text('Last 7 days')),
     );
-    await tester.pumpAndSettle();
     final now = DateTime.now();
-    expect(find.text('${now.month}/${now.day}'), findsOneWidget);
+    final dayLabel = find.text('${now.month}/${now.day}');
+    for (var frame = 0; frame < 20 && !dayLabel.tryEvaluate(); frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(dayLabel, findsOneWidget);
+    expect(find.text('00:00'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('00:00'), findsNothing);
     await tester.tap(
       find.descendant(of: range, matching: find.text('All time')),
     );

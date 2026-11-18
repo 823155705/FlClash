@@ -93,18 +93,57 @@ List<_TrafficBar> _trafficBars(
   return bars;
 }
 
+Map<String?, Color> _trafficSwatches(
+  BuildContext context,
+  List<AppTrafficBucket> timeline,
+) {
+  final colors = context.colorScheme;
+  final seed = HSLColor.fromColor(colors.primary);
+  final hue = seed.saturation < 0.1 ? 216.0 : seed.hue;
+  final lightness = colors.brightness == Brightness.dark ? 0.68 : 0.45;
+  final ids = {for (final slice in timeline) ?slice.applicationId}.toList()
+    ..sort();
+  const hueOffsets = [0.0, -60.0, 65.0];
+  return {
+    for (final (index, id) in ids.indexed)
+      id: HSLColor.fromAHSL(
+        1,
+        (hue + hueOffsets[index]) % 360,
+        0.6,
+        lightness,
+      ).toColor(),
+    null: HSLColor.fromColor(colors.outline).withSaturation(0).toColor(),
+  };
+}
+
+class _TrafficSwatch extends StatelessWidget {
+  final Color color;
+
+  const _TrafficSwatch({required this.color});
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: ShapeDecoration(color: color, shape: AppShape.circle),
+    child: const SizedBox.square(dimension: 8),
+  );
+}
+
+typedef _TrafficSegment = (int, String?);
+
 class _TrafficChart extends StatefulWidget {
   final List<_TrafficBar> bars;
+  final Map<String?, Color> swatches;
 
-  const _TrafficChart({required this.bars});
+  const _TrafficChart({required this.bars, required this.swatches});
 
   @override
   State<_TrafficChart> createState() => _TrafficChartState();
 }
 
 class _TrafficChartState extends State<_TrafficChart> {
-  static const _height = 132.0;
-  int? _selection;
+  static const _height = 144.0;
+  _TrafficSegment? _hover;
+  _TrafficSegment? _selection;
 
   @override
   Widget build(BuildContext context) {
@@ -126,13 +165,10 @@ class _TrafficChartState extends State<_TrafficChart> {
         );
       }
     }
-    final palette = [colors.primary, colors.tertiary, colors.success];
-    final ids = totals.keys.nonNulls.toList()..sort();
-    final swatches = {
-      for (final (index, id) in ids.indexed) id: palette[index],
-      if (totals.containsKey(null))
-        null: colors.onSurfaceVariant.withValues(alpha: 0.55),
-    };
+    final swatches = widget.swatches;
+    final muted = HSLColor.fromColor(
+      colors.outlineVariant,
+    ).withSaturation(0).toColor();
     final axisStyle = AppTextStyle.caption2
         .of(context)
         .copyWith(color: colors.onSurfaceVariant);
@@ -140,24 +176,58 @@ class _TrafficChartState extends State<_TrafficChart> {
       locale: Localizations.localeOf(context).toString(),
       decimalDigits: 1,
     );
-    final active = bars
-        .where((bar) => bar.period.index == _selection)
-        .firstOrNull;
+    _TrafficBar? barFor(_TrafficSegment? segment) =>
+        bars.where((bar) => bar.period.index == segment?.$1).firstOrNull;
+    final selectedBar = barFor(_selection);
+    final selectedSlice = selectedBar?.apps[_selection?.$2];
+    final hover = _hover;
+    final active = barFor(hover)?.apps[hover?.$2] != null
+        ? hover
+        : selectedSlice == null
+        ? null
+        : _selection;
 
     String label(AppTrafficBucket slice) => slice.applicationId == null
         ? l10n.other
         : slice.applicationLabel.isEmpty
         ? l10n.unknownApplication
         : slice.applicationLabel;
-    String share(AppTrafficBucket slice, int total) {
+    String amountAndShare(AppTrafficBucket slice, int total) {
       final amount = slice.upload + slice.download;
-      return '${label(slice)} · ${amount.traffic.show} (${percentage.format(amount / total)})';
+      return '${amount.traffic.show} · ${percentage.format(amount / total)}';
     }
 
-    String directions(_TrafficBar bar) =>
-        '${l10n.upload} ${bar.upload.traffic.show} · ${l10n.download} ${bar.download.traffic.show}';
-    final displayedApps = active?.apps ?? totals;
-    final displayedTotal = active?.total ?? overall;
+    Widget segment(_TrafficBar bar, AppTrafficBucket slice, Color color) {
+      final id = (bar.period.index, slice.applicationId);
+      return Expanded(
+        key: ValueKey(id),
+        flex: slice.upload + slice.download,
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _hover = id),
+          onExit: (_) {
+            if (_hover == id) setState(() => _hover = null);
+          },
+          child: Tooltip(
+            message: '${label(slice)}\n${amountAndShare(slice, bar.total)}',
+            preferBelow: false,
+            child: PressSurface(
+              fill: Colors.transparent,
+              shape: AppShape.xs,
+              look: PressLook.none,
+              showsHover: false,
+              selected: _selection == id,
+              childFills: true,
+              onPressed: () => setState(() {
+                _selection = _selection == id ? null : id;
+              }),
+              child: ColoredBox(
+                color: active == null || active == id ? color : muted,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -209,70 +279,34 @@ class _TrafficChartState extends State<_TrafficChart> {
                                   Expanded(
                                     child: bar.total == 0
                                         ? const SizedBox.shrink()
-                                        : Tooltip(
-                                            message: [
-                                              bar.period.title,
-                                              '${l10n.totalTraffic} ${bar.total.traffic.show}',
-                                              directions(bar),
-                                              for (final id in swatches.keys)
-                                                if (bar.apps[id]
-                                                    case final slice?)
-                                                  share(slice, bar.total),
-                                            ].join('\n'),
-                                            preferBelow: false,
-                                            child: PressSurface(
-                                              key: ValueKey(bar.period.index),
-                                              fill: identical(active, bar)
-                                                  ? colors.primary.withValues(
-                                                      alpha: 0.10,
-                                                    )
-                                                  : Colors.transparent,
-                                              shape: AppShape.xs,
-                                              selected: identical(active, bar),
-                                              childFills: true,
-                                              onPressed: () => setState(() {
-                                                _selection =
-                                                    identical(active, bar)
-                                                    ? null
-                                                    : bar.period.index;
-                                              }),
-                                              child: Align(
-                                                alignment:
-                                                    Alignment.bottomCenter,
-                                                child: SizedBox(
-                                                  width: barWidth,
-                                                  height:
-                                                      _height *
-                                                      bar.total /
-                                                      peak,
-                                                  child: ClipRSuperellipse(
-                                                    borderRadius: AppRadius.top(
-                                                      AppCorner.xs,
-                                                    ),
-                                                    child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .stretch,
-                                                      children: [
-                                                        for (final MapEntry(
-                                                              :key,
-                                                              :value,
-                                                            )
-                                                            in swatches.entries)
-                                                          if (bar.apps[key]
-                                                              case final slice?)
-                                                            Expanded(
-                                                              flex:
-                                                                  slice.upload +
-                                                                  slice
-                                                                      .download,
-                                                              child: ColoredBox(
-                                                                color: value,
-                                                              ),
-                                                            ),
-                                                      ],
-                                                    ),
-                                                  ),
+                                        : Align(
+                                            alignment: Alignment.bottomCenter,
+                                            child: SizedBox(
+                                              width: barWidth,
+                                              height:
+                                                  _height * bar.total / peak,
+                                              child: ClipRSuperellipse(
+                                                borderRadius: AppRadius.top(
+                                                  AppCorner.xs,
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment
+                                                          .stretch,
+                                                  children: [
+                                                    for (final MapEntry(
+                                                          :key,
+                                                          :value,
+                                                        )
+                                                        in swatches.entries)
+                                                      if (bar.apps[key]
+                                                          case final slice?)
+                                                        segment(
+                                                          bar,
+                                                          slice,
+                                                          value,
+                                                        ),
+                                                  ],
                                                 ),
                                               ),
                                             ),
@@ -321,33 +355,25 @@ class _TrafficChartState extends State<_TrafficChart> {
             ),
           ],
         ),
-        if (active != null) ...[
+        if (selectedBar != null && selectedSlice != null)
           Text(
-            '${active.period.title} · ${active.total.traffic.show}',
+            '${selectedBar.period.title} · ${label(selectedSlice)} · ${amountAndShare(selectedSlice, selectedBar.total)}',
             style: AppTextStyle.subheadline.of(context, emphasized: true),
           ),
-          Text(directions(active), style: AppTextStyle.footnote.of(context)),
-        ],
         Wrap(
           spacing: 16,
           runSpacing: 6,
           children: [
-            for (final id in swatches.keys)
-              if (displayedApps[id] case final slice?)
+            for (final MapEntry(:key, :value) in swatches.entries)
+              if (totals[key] case final slice?)
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   spacing: 6,
                   children: [
-                    DecoratedBox(
-                      decoration: ShapeDecoration(
-                        color: swatches[id],
-                        shape: AppShape.circle,
-                      ),
-                      child: const SizedBox.square(dimension: 8),
-                    ),
+                    _TrafficSwatch(color: value),
                     Flexible(
                       child: Text(
-                        share(slice, displayedTotal),
+                        '${label(slice)} · ${amountAndShare(slice, overall)}',
                         style: AppTextStyle.footnote.of(context),
                       ),
                     ),
