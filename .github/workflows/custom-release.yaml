@@ -1,9 +1,7 @@
 name: Build custom installers
 
 on:
-  push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+\+[0-9]+'
+  workflow_call:
 
 permissions:
   contents: read
@@ -19,7 +17,6 @@ env:
 
 jobs:
   package:
-    if: github.repository != 'chen08209/FlClash'
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
