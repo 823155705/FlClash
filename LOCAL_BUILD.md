@@ -18,7 +18,7 @@ git tag v0.9.4+2026111904 custom
 git push origin refs/tags/v0.9.4+2026111904
 ```
 
-如果推送标签后没有新的构建任务，可以从同一标签手动运行 `gh workflow run build.yaml --ref v0.9.4+2026111904`。
+如果推送标签后没有新的构建任务，可以在 GitHub Actions 的 `Build custom installers` 中选择该标签手动运行，或执行 `gh workflow run custom-release.yaml --ref v0.9.4+2026111904`。
 
 Actions 产物包括 macOS Apple Silicon 和 Intel 的 DMG、Windows x64 安装版和便携 ZIP，以及 Android 的 arm64-v8a、armeabi-v7a 和 x86_64 APK。Android 构建产物使用一次性签名，只用于打包和传输。发布前用本地发布密钥重新签署 APK 并验证签名，检查安装包完整性，合并生成 `FlClash-dev-X.Y.Z.构建号-SHA256SUMS`（例如 `FlClash-dev-0.9.4.2026111904-SHA256SUMS`），再用同一个标签创建 GitHub Release。
 
