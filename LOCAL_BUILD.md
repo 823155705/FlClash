@@ -1,4 +1,4 @@
-# 应用流量定制版
+# FlClash 定制版
 
 上游版本来自 chen08209/FlClash。应用流量统计位于 `lib/manager/app_traffic_tracker.dart`、`lib/database/app_traffic.dart` 和 `lib/views/traffic/app_traffic.dart`。
 
@@ -10,7 +10,15 @@ APP_UPDATE_REPOSITORY=<GitHub用户名>/FlClash ./tool/build_local_macos.sh
 
 安装包在 `dist/`。更新源通过构建参数 `APP_UPDATE_REPOSITORY` 指定，未指定的上游构建仍然使用原仓库。定制构建传入 `APP_TRAFFIC_CUSTOM_BUILD=true`，支持同一版本号下按构建号检查修复包。
 
-在 fork 的 GitHub Actions 中手动运行 `Custom app traffic release`，可为选定提交构建 macOS（Apple Silicon 和 Intel）、Windows（x64）和 Android 安装包。运行成功后下载各平台构建产物，用本地发布密钥重新签署 Android APK，验证签名，再生成 `SHA256SUMS` 并发布到该 fork。Android 构建产物使用一次性签名，只用于打包和传输。
+在 `custom` 分支提交目标版本后，推送与 `pubspec.yaml` 中 `version` 一致的 `vX.Y.Z+构建号` 标签。GitHub Actions 的 `Build custom installers` 会从该标签对应的提交打包。示例中 `2026111903` 必须先写入 `pubspec.yaml` 的构建号。
+
+```bash
+git push origin custom
+git tag v0.9.3+2026111903 custom
+git push origin refs/tags/v0.9.3+2026111903
+```
+
+Actions 产物包括 macOS Apple Silicon 和 Intel 的 DMG、Windows x64 安装版和便携 ZIP，以及 Android 的 arm64-v8a、armeabi-v7a 和 x86_64 APK。Android 构建产物使用一次性签名，只用于打包和传输。发布前用本地发布密钥重新签署 APK 并验证签名，检查安装包完整性，生成 `SHA256SUMS`，再用同一个标签创建 GitHub Release。
 
 macOS 应用内更新会校验下载文件 SHA-256、包签名和 Bundle ID，等待旧进程退出后替换并重启，旧应用保留在安装日志目录内，文件替换失败会恢复旧应用。应用配置和统计数据库位于应用包外，覆盖安装继续使用原数据。
 

@@ -1,13 +1,15 @@
-name: Custom app traffic release
+name: Build custom installers
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+\+[0-9]+'
 
 permissions:
   contents: read
 
 concurrency:
-  group: custom-app-traffic-release-${{ github.ref }}
+  group: custom-installers-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -43,6 +45,14 @@ jobs:
         with:
           submodules: recursive
           persist-credentials: false
+      - name: Verify release tag
+        shell: bash
+        run: |
+          version=$(awk '$1 == "version:" { print $2; exit }' pubspec.yaml)
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            printf 'Tag %s must match pubspec.yaml version v%s.\n' "$GITHUB_REF_NAME" "$version" >&2
+            exit 1
+          fi
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.6'
