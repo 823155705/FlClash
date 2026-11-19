@@ -41,18 +41,47 @@ private final class TrayPanelContainerView: NSView {
     }
 }
 
-private final class TrayPanelHostingView<Content: View>: NSHostingView<Content> {
-    var onLayout: (() -> Void)?
-    var cornerRadius: CGFloat = 0
+private final class TrayPanelBorderView: NSView {
+    private let cornerRadius: CGFloat
+
+    init(cornerRadius: CGFloat) {
+        self.cornerRadius = cornerRadius
+        super.init(frame: .zero)
+        wantsLayer = true
+        applyStyle()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
 
     override func layout() {
         super.layout()
+        applyStyle()
+    }
+
+    private func applyStyle() {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
         layer?.cornerRadius = cornerRadius
         layer?.cornerCurve = .continuous
-        layer?.masksToBounds = true
-        onLayout?()
+        layer?.borderWidth = 0.75
+    }
+}
+
+private extension TrayPanelTheme {
+    func nsColor(_ argb: Int64) -> NSColor {
+        let value = UInt32(truncatingIfNeeded: argb)
+        let alpha = CGFloat((value >> 24) & 0xFF) / 255.0
+        let red = CGFloat((value >> 16) & 0xFF) / 255.0
+        let green = CGFloat((value >> 8) & 0xFF) / 255.0
+        let blue = CGFloat(value & 0xFF) / 255.0
+        return NSColor(srgbRed: red, green: green, blue: blue, alpha: alpha)
     }
 }
 
@@ -70,7 +99,9 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
     private var panel: TrayFloatingPanel?
     private var containerView: TrayPanelContainerView?
     private var visualEffectView: NSVisualEffectView?
-    private var hostingView: TrayPanelHostingView<TrayPanelView>?
+    private var tintView: NSView?
+    private var borderView: TrayPanelBorderView?
+    private var hostingView: NSHostingView<TrayPanelView>?
 
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
@@ -78,6 +109,8 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
     private var spaceObserver: NSObjectProtocol?
     private var screenObserver: NSObjectProtocol?
     private var resizeScheduled = false
+    private var measuredContentHeight: CGFloat = TrayPanelController.minHeightFloor
+    private var targetPanelFrame: NSRect?
     private var lastUnexpectedStatusCloseUptime: TimeInterval = 0
 
     var isVisible: Bool {
@@ -141,7 +174,7 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
     }
 
     func updateState(_ dict: [String: Any]) {
-        store.updateState(from: dict, animated: isVisible)
+        store.updateState(from: dict)
         applyAppearance()
         if isVisible {
             repositionPanel(animated: true)
@@ -189,6 +222,7 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
     func close() {
         let wasVisible = isVisible
         removeObservers()
+        targetPanelFrame = nil
         panel?.orderOut(nil)
         resolveStatusButton()?.highlight(false)
         if wasVisible {
@@ -217,7 +251,11 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
         panel = nil
         containerView = nil
         visualEffectView = nil
+        tintView = nil
+        borderView = nil
         hostingView = nil
+        measuredContentHeight = Self.minHeightFloor
+        targetPanelFrame = nil
         store.reset()
     }
 
@@ -291,37 +329,56 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
         effectView.layer?.masksToBounds = true
         effectView.maskImage = Self.makeContinuousMaskImage(cornerRadius: Self.cornerRadius)
 
-        let rootView = TrayPanelView(store: store) { [weak self] action, payload in
-            self?.onAction(action, payload)
-        }
-        let host = TrayPanelHostingView(rootView: rootView)
+        let tint = NSView()
+        tint.translatesAutoresizingMaskIntoConstraints = false
+        tint.wantsLayer = true
+
+        let border = TrayPanelBorderView(cornerRadius: Self.cornerRadius)
+        border.translatesAutoresizingMaskIntoConstraints = false
+
+        let rootView = TrayPanelView(
+            store: store,
+            onAction: { [weak self] action, payload in
+                self?.onAction(action, payload)
+            },
+            onContentHeight: { [weak self] height in
+                self?.handleContentHeightChanged(height)
+            }
+        )
+        let host = NSHostingView(rootView: rootView)
         host.translatesAutoresizingMaskIntoConstraints = false
-        host.cornerRadius = Self.cornerRadius
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
-        host.layer?.cornerRadius = Self.cornerRadius
-        host.layer?.cornerCurve = .continuous
-        host.layer?.masksToBounds = true
-        host.onLayout = { [weak self] in
-            self?.scheduleResize()
-        }
 
+        effectView.addSubview(tint)
         effectView.addSubview(host)
         container.addSubview(effectView)
+        container.addSubview(border)
         NSLayoutConstraint.activate([
             effectView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             effectView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             effectView.topAnchor.constraint(equalTo: container.topAnchor),
             effectView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            tint.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
+            tint.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
+            tint.topAnchor.constraint(equalTo: effectView.topAnchor),
+            tint.bottomAnchor.constraint(equalTo: effectView.bottomAnchor),
+            border.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            border.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            border.topAnchor.constraint(equalTo: container.topAnchor),
+            border.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             host.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
             host.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
             host.topAnchor.constraint(equalTo: effectView.topAnchor),
+            host.heightAnchor.constraint(equalToConstant: Self.maxHeightCap + 100),
         ])
 
         createdPanel.contentView = container
         self.panel = createdPanel
         self.containerView = container
         self.visualEffectView = effectView
+        self.tintView = tint
+        self.borderView = border
         self.hostingView = host
     }
 
@@ -348,11 +405,22 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
     }
 
     private func applyAppearance() {
-        let name: NSAppearance.Name = store.state.theme.isDark ? .darkAqua : .aqua
+        let theme = store.state.theme
+        let name: NSAppearance.Name = theme.isDark ? .darkAqua : .aqua
         let appearance = NSAppearance(named: name)
         panel?.appearance = appearance
         containerView?.appearance = appearance
         visualEffectView?.appearance = appearance
+        tintView?.layer?.backgroundColor = theme.nsColor(theme.glassTint).cgColor
+        borderView?.layer?.borderColor = theme.nsColor(theme.hairline).cgColor
+    }
+
+    private func handleContentHeightChanged(_ height: CGFloat) {
+        guard height > 0, abs(measuredContentHeight - height) > 0.5 else {
+            return
+        }
+        measuredContentHeight = height
+        scheduleResize()
     }
 
     private func updateMaxPanelHeight(for button: NSStatusBarButton) {
@@ -387,8 +455,7 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
 
         updateMaxPanelHeight(for: button)
         hostingView.layoutSubtreeIfNeeded()
-        let fittedHeight = hostingView.fittingSize.height
-        let panelHeight = min(store.maxPanelHeight, max(Self.minHeightFloor, fittedHeight))
+        let panelHeight = min(store.maxPanelHeight, max(Self.minHeightFloor, measuredContentHeight))
 
         let screen = buttonWindow.screen ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -401,21 +468,38 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
         let y = max(visibleFrame.minY + 8, topY - panelHeight)
 
         let nextFrame = NSRect(x: round(x), y: round(y), width: Self.panelWidth, height: round(panelHeight))
-        if abs(panel.frame.origin.x - nextFrame.origin.x) > 0.5
-            || abs(panel.frame.origin.y - nextFrame.origin.y) > 0.5
-            || abs(panel.frame.size.width - nextFrame.size.width) > 0.5
-            || abs(panel.frame.size.height - nextFrame.size.height) > 0.5 {
+        if animated, let target = targetPanelFrame, framesMatch(target, nextFrame) {
+            return
+        }
+        if !framesMatch(panel.frame, nextFrame) {
+            targetPanelFrame = nextFrame
             if animated {
-                NSAnimationContext.runAnimationGroup { context in
+                NSAnimationContext.runAnimationGroup({ context in
                     context.duration = 0.18
                     context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                     panel.animator().setFrame(nextFrame, display: true)
-                }
+                }, completionHandler: { [weak self] in
+                    guard let self = self else {
+                        return
+                    }
+                    if let target = self.targetPanelFrame, self.framesMatch(target, nextFrame) {
+                        self.targetPanelFrame = nil
+                        self.panel?.invalidateShadow()
+                    }
+                })
             } else {
+                targetPanelFrame = nil
                 panel.setFrame(nextFrame, display: true)
+                panel.invalidateShadow()
             }
-            panel.invalidateShadow()
         }
+    }
+
+    private func framesMatch(_ lhs: NSRect, _ rhs: NSRect) -> Bool {
+        abs(lhs.origin.x - rhs.origin.x) <= 0.5
+            && abs(lhs.origin.y - rhs.origin.y) <= 0.5
+            && abs(lhs.size.width - rhs.size.width) <= 0.5
+            && abs(lhs.size.height - rhs.size.height) <= 0.5
     }
 
     private func isPointInStatusButton(_ screenPoint: NSPoint) -> Bool {

@@ -151,6 +151,7 @@ class TrayPanelWindow {
     float max_panel_height_dip = 600.0f;
     float divider_y_dip = 0.0f;
     float footer_y_dip = 0.0f;
+    D2D1_RECT_F mode_segment_rects[3]{};
     D2D1_RECT_F search_box_rect{};
     D2D1_RECT_F search_clear_rect{};
     D2D1_RECT_F groups_header_rect{};
@@ -159,6 +160,28 @@ class TrayPanelWindow {
     float max_scroll_dip = 0.0f;
     std::vector<GroupCardLayout> group_cards;
     std::vector<HitTarget> hits;
+  };
+
+  struct OutgoingProxiesSnapshot {
+    bool valid = false;
+    bool search_visible = false;
+    bool testing_all = false;
+    std::wstring search_query;
+    std::vector<TrayPanelGroup> groups;
+    std::vector<FilteredGroup> filtered_groups;
+    PanelLayout layout;
+    float scroll_offset_dip = 0.0f;
+
+    void Reset() {
+      valid = false;
+      search_visible = false;
+      testing_all = false;
+      search_query.clear();
+      groups.clear();
+      filtered_groups.clear();
+      layout = PanelLayout{};
+      scroll_offset_dip = 0.0f;
+    }
   };
 
   static LRESULT CALLBACK WindowProc(HWND hwnd,
@@ -185,6 +208,14 @@ class TrayPanelWindow {
   void RebuildFilteredGroups();
   void RebuildLayout();
   void ClampScroll();
+  void ApplyLocalLayoutChange(bool sync_timers);
+  void StartHeightAnimationIfNeeded(float prev_height_dip);
+  void SnapAnimationsToCurrentState();
+  void CancelAnimations();
+  void StepAnimationsAt(ULONGLONG now);
+  bool HasActiveAnimations() const;
+  float CurrentPanelHeightDip() const;
+  D2D1_RECT_F ModeSegmentRect(const std::string& mode) const;
 
   std::optional<HitTarget> HitTest(float dip_x, float dip_y) const;
   void DispatchHit(const HitTarget& hit);
@@ -193,9 +224,24 @@ class TrayPanelWindow {
   void DrawHeader(float y_top);
   void DrawOutboundMode(float y_top);
   void DrawQuickToggles(float y_top);
-  void DrawProxiesSection(float y_top);
-  void DrawGroupCard(const GroupCardLayout& card);
-  void DrawProxyTile(const ProxyTileLayout& tile, const TrayPanelProxy& proxy);
+  void DrawAnimatedProxiesSection(float max_bottom_dip);
+  void DrawProxiesSectionContent(
+      const std::vector<TrayPanelGroup>& groups,
+      const std::vector<FilteredGroup>& filtered_groups,
+      const PanelLayout& layout,
+      bool search_visible,
+      bool testing_all,
+      const std::wstring& search_query,
+      float scroll_offset_dip,
+      float max_bottom_dip,
+      float alpha_scale,
+      bool interactive);
+  void DrawGroupCard(const GroupCardLayout& card,
+                     const TrayPanelGroup& group,
+                     bool interactive);
+  void DrawProxyTile(const ProxyTileLayout& tile,
+                     const TrayPanelProxy& proxy,
+                     bool interactive);
   void DrawDelayBadge(const std::optional<int>& delay,
                       bool testing,
                       float right_x,
@@ -249,6 +295,27 @@ class TrayPanelWindow {
   bool copied_feedback_ = false;
   bool caret_visible_ = true;
   float spinner_angle_deg_ = 0.0f;
+  bool anchor_bottom_ = true;
+  bool anim_timer_running_ = false;
+  float draw_alpha_scale_ = 1.0f;
+
+  std::string last_mode_;
+  bool mode_anim_active_ = false;
+  ULONGLONG mode_anim_start_tick_ = 0;
+  D2D1_RECT_F mode_anim_from_rect_{};
+  D2D1_RECT_F mode_anim_to_rect_{};
+  D2D1_RECT_F pill_current_rect_{};
+
+  bool height_anim_active_ = false;
+  ULONGLONG height_anim_start_tick_ = 0;
+  float anim_start_height_dip_ = 240.0f;
+  float anim_target_height_dip_ = 240.0f;
+  float anim_current_height_dip_ = 240.0f;
+
+  bool proxies_anim_active_ = false;
+  ULONGLONG proxies_anim_start_tick_ = 0;
+  float proxies_anim_progress_ = 1.0f;
+  OutgoingProxiesSnapshot outgoing_proxies_;
 
   RECT last_icon_rect_{};
   bool has_last_icon_rect_ = false;

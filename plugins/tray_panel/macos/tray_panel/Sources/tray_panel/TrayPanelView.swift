@@ -4,6 +4,7 @@ import SwiftUI
 struct TrayPanelView: View {
     @ObservedObject var store: TrayPanelStore
     let onAction: (String, [String: Any]) -> Void
+    var onContentHeight: ((CGFloat) -> Void)? = nil
 
     @Namespace private var modePillNamespace
 
@@ -51,7 +52,6 @@ struct TrayPanelView: View {
             quickTogglesSection
             if !state.groups.isEmpty {
                 proxiesSection
-                    .transition(.opacity)
             }
             Rectangle()
                 .fill(theme.color(theme.hairline))
@@ -60,17 +60,16 @@ struct TrayPanelView: View {
         }
         .padding(14)
         .frame(width: 348)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(theme.color(theme.glassTint))
-        )
         .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(theme.color(theme.hairline), lineWidth: 0.75)
+            GeometryReader { geo in
+                Color.clear
+                    .preference(key: TrayPanelContentHeightKey.self, value: geo.size.height)
+            }
         )
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .background(Color.clear)
-        .fixedSize(horizontal: false, vertical: true)
+        .onPreferenceChange(TrayPanelContentHeightKey.self) { height in
+            onContentHeight?(height)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var headerSection: some View {
@@ -428,6 +427,7 @@ struct TrayPanelView: View {
                     }
                     .frame(width: 320, alignment: .top)
                 }
+                .frame(width: 320)
                 .fixedSize(horizontal: false, vertical: true)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -753,6 +753,7 @@ private struct ProxyGroupCard: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(theme.color(theme.onSurfaceVariant))
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .animation(.easeInOut(duration: 0.18), value: isExpanded)
                     .frame(width: 14)
             }
             .contentShape(Rectangle())
@@ -912,6 +913,13 @@ private struct DelayBadge: View {
     }
 }
 
+private struct TrayPanelContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 210
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 private final class FlippedGroupsDocumentView: NSView {
     override var isFlipped: Bool { true }
 }
@@ -930,7 +938,7 @@ private final class BoundedGroupsScrollView<Content: View>: NSScrollView {
     init(rootView: Content, maxHeight: CGFloat) {
         self.hostingView = NSHostingView(rootView: rootView)
         self.maxHeight = maxHeight
-        super.init(frame: .zero)
+        super.init(frame: NSRect(x: 0, y: 0, width: 320, height: 44))
         wantsLayer = true
         layer?.cornerRadius = 14
         layer?.cornerCurve = .continuous
@@ -959,23 +967,25 @@ private final class BoundedGroupsScrollView<Content: View>: NSScrollView {
         nil
     }
 
+    var measuredContentHeight: CGFloat {
+        max(ceil(hostingView.fittingSize.height), 44)
+    }
+
     override var intrinsicContentSize: NSSize {
         let width = contentSize.width > 1 ? contentSize.width : (bounds.width > 1 ? bounds.width : 320)
-        if abs(documentContainer.frame.width - width) > 0.5 {
-            documentContainer.frame.size.width = width
-        }
-        hostingView.layoutSubtreeIfNeeded()
-        let fitted = ceil(hostingView.fittingSize.height)
-        return NSSize(width: width, height: min(max(fitted, 44), maxHeight))
+        return NSSize(width: width, height: min(measuredContentHeight, maxHeight))
     }
 
     override func layout() {
         super.layout()
+        syncDocumentSize()
+    }
+
+    func syncDocumentSize() {
         let width = contentSize.width > 1 ? contentSize.width : (bounds.width > 1 ? bounds.width : 320)
         if abs(documentContainer.frame.width - width) > 0.5 {
             documentContainer.frame.size.width = width
         }
-        hostingView.layoutSubtreeIfNeeded()
         let fitted = ceil(hostingView.fittingSize.height)
         let targetDocHeight = max(fitted, contentSize.height)
         if abs(documentContainer.frame.height - targetDocHeight) > 0.5 {
@@ -995,7 +1005,7 @@ private struct FittingGroupsScrollView<Content: View>: NSViewRepresentable {
     func updateNSView(_ nsView: BoundedGroupsScrollView<Content>, context: Context) {
         nsView.maxHeight = maxHeight
         nsView.hostingView.rootView = content()
-        nsView.hostingView.layoutSubtreeIfNeeded()
+        nsView.syncDocumentSize()
         nsView.invalidateIntrinsicContentSize()
         nsView.needsLayout = true
         let visibleHeight = nsView.contentView.bounds.height
@@ -1005,5 +1015,15 @@ private struct FittingGroupsScrollView<Content: View>: NSViewRepresentable {
             nsView.contentView.scroll(to: NSPoint(x: 0, y: maxOffset))
             nsView.reflectScrolledClipView(nsView.contentView)
         }
+    }
+
+    @available(macOS 13.0, *)
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        nsView: BoundedGroupsScrollView<Content>,
+        context: Context
+    ) -> CGSize? {
+        let width = proposal.width ?? 320
+        return CGSize(width: width, height: min(nsView.measuredContentHeight, maxHeight))
     }
 }

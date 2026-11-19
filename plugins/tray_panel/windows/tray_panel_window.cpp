@@ -38,13 +38,19 @@ constexpr float kSectionGapDip = 10.0f;
 constexpr float kMaxPanelHeightDip = 600.0f;
 constexpr float kWorkMarginDip = 8.0f;
 constexpr float kAnchorGapDip = 8.0f;
+constexpr float kFooterOffsetFromBottomDip = 42.0f;
+constexpr float kDividerOffsetFromBottomDip = 53.0f;
 
 constexpr UINT_PTR kSpinnerTimerId = 1;
 constexpr UINT_PTR kCopyFeedbackTimerId = 2;
 constexpr UINT_PTR kCaretTimerId = 3;
+constexpr UINT_PTR kAnimTimerId = 4;
 constexpr UINT kSpinnerIntervalMs = 33;
 constexpr UINT kCopyFeedbackDurationMs = 1500;
 constexpr UINT kCaretBlinkMs = 530;
+constexpr UINT kAnimIntervalMs = 15;
+constexpr ULONGLONG kModeAnimDurationMs = 175;
+constexpr ULONGLONG kLayoutAnimDurationMs = 175;
 constexpr ULONGLONG kToggleGuardMs = 400;
 constexpr float kPi = 3.14159265f;
 
@@ -166,6 +172,60 @@ D2D1_RECT_F OffsetRectF(const D2D1_RECT_F& rect, float dy) {
   return D2D1::RectF(rect.left, rect.top + dy, rect.right, rect.bottom + dy);
 }
 
+float Clamp01(float t) {
+  return (std::max)(0.0f, (std::min)(1.0f, t));
+}
+
+float EaseOutCubic(float t) {
+  const float u = 1.0f - Clamp01(t);
+  return 1.0f - u * u * u;
+}
+
+uint32_t LerpArgb(uint32_t from_argb, uint32_t to_argb, float t) {
+  const float s = Clamp01(t);
+  const auto lerp_ch = [s](uint32_t a, uint32_t b) -> uint32_t {
+    const float v = static_cast<float>(a) +
+                    (static_cast<float>(b) - static_cast<float>(a)) * s;
+    return static_cast<uint32_t>(
+        (std::max)(0L, (std::min)(255L, std::lround(v))));
+  };
+  const uint32_t a = lerp_ch((from_argb >> 24) & 0xFFU, (to_argb >> 24) & 0xFFU);
+  const uint32_t r = lerp_ch((from_argb >> 16) & 0xFFU, (to_argb >> 16) & 0xFFU);
+  const uint32_t g = lerp_ch((from_argb >> 8) & 0xFFU, (to_argb >> 8) & 0xFFU);
+  const uint32_t b = lerp_ch(from_argb & 0xFFU, to_argb & 0xFFU);
+  return (a << 24) | (r << 16) | (g << 8) | b;
+}
+
+D2D1_RECT_F LerpRectF(const D2D1_RECT_F& a, const D2D1_RECT_F& b, float t) {
+  const float s = Clamp01(t);
+  return D2D1::RectF(a.left + (b.left - a.left) * s,
+                     a.top + (b.top - a.top) * s,
+                     a.right + (b.right - a.right) * s,
+                     a.bottom + (b.bottom - a.bottom) * s);
+}
+
+float RectHorizontalOverlapRatio(const D2D1_RECT_F& pill,
+                                 const D2D1_RECT_F& seg) {
+  const float seg_w = seg.right - seg.left;
+  if (seg_w <= 0.0f) {
+    return 0.0f;
+  }
+  const float overlap =
+      (std::max)(0.0f, (std::min)(pill.right, seg.right) -
+                           (std::max)(pill.left, seg.left));
+  return Clamp01(overlap / seg_w);
+}
+
+int ModeIndexFromString(const std::string& mode) {
+  if (mode == "global") {
+    return 1;
+  }
+  if (mode == "direct") {
+    return 2;
+  }
+  return 0;
+}
+
 std::wstring FormatDelayText(int delay,
                              const TrayPanelLabels& labels,
                              bool include_unit) {
@@ -224,6 +284,30 @@ void TrayPanelWindow::SetOwner(HWND owner_hwnd, UINT tray_icon_id) {
 }
 
 bool TrayPanelWindow::SetState(const TrayPanelState& state) {
+  const bool was_ready = has_state_ && is_visible_;
+  const std::string prev_mode = state_.mode;
+  const float prev_height_dip = layout_.panel_height_dip;
+  const bool prev_groups_empty = state_.groups.empty();
+  const ULONGLONG now = ::GetTickCount64();
+
+  if (was_ready) {
+    StepAnimationsAt(now);
+    const bool mode_changed = state.mode != prev_mode;
+    const bool groups_toggled = state.groups.empty() != prev_groups_empty;
+    if ((mode_changed || groups_toggled) && !prev_groups_empty) {
+      outgoing_proxies_.valid = true;
+      outgoing_proxies_.search_visible = search_visible_;
+      outgoing_proxies_.testing_all = state_.testing_all;
+      outgoing_proxies_.search_query = search_query_;
+      outgoing_proxies_.groups = std::move(state_.groups);
+      outgoing_proxies_.filtered_groups = std::move(filtered_groups_);
+      outgoing_proxies_.layout = layout_;
+      outgoing_proxies_.scroll_offset_dip = scroll_offset_dip_;
+    } else if (mode_changed || groups_toggled) {
+      outgoing_proxies_.Reset();
+    }
+  }
+
   state_ = state;
   has_state_ = true;
 
@@ -242,6 +326,39 @@ bool TrayPanelWindow::SetState(const TrayPanelState& state) {
   RebuildFilteredGroups();
   RebuildLayout();
   ClampScroll();
+
+  if (!was_ready) {
+    SnapAnimationsToCurrentState();
+  } else {
+    const D2D1_RECT_F target_pill = ModeSegmentRect(state_.mode);
+    if (state_.mode != prev_mode) {
+      if (last_mode_.empty()) {
+        pill_current_rect_ = target_pill;
+        mode_anim_active_ = false;
+      } else {
+        mode_anim_from_rect_ = pill_current_rect_;
+        mode_anim_to_rect_ = target_pill;
+        mode_anim_start_tick_ = now;
+        mode_anim_active_ = true;
+      }
+      last_mode_ = state_.mode;
+    } else if (mode_anim_active_) {
+      mode_anim_to_rect_ = target_pill;
+    } else {
+      pill_current_rect_ = target_pill;
+    }
+
+    StartHeightAnimationIfNeeded(prev_height_dip);
+
+    if ((state_.mode != prev_mode ||
+         state_.groups.empty() != prev_groups_empty) &&
+        (!prev_groups_empty || !state_.groups.empty())) {
+      proxies_anim_start_tick_ = now;
+      proxies_anim_progress_ = 0.0f;
+      proxies_anim_active_ = true;
+    }
+  }
+
   UpdateWindowSizeIfVisible();
   SyncTimers();
   if (is_visible_ && hwnd_ != nullptr) {
@@ -284,6 +401,7 @@ bool TrayPanelWindow::Open() {
   ComputeWindowBounds(true, &x, &y, &w, &h);
   RebuildLayout();
   ClampScroll();
+  SnapAnimationsToCurrentState();
   ComputeWindowBounds(true, &x, &y, &w, &h);
   ApplyBackdropAndTheme();
 
@@ -339,6 +457,8 @@ void TrayPanelWindow::Destroy() {
   search_query_.clear();
   scroll_offset_dip_ = 0.0f;
   has_state_ = false;
+  last_mode_.clear();
+  CancelAnimations();
 }
 
 bool TrayPanelWindow::EnsureWindowCreated() {
@@ -557,14 +677,12 @@ void TrayPanelWindow::ComputeWindowBounds(bool reposition,
                                           int* out_w,
                                           int* out_h) {
   RECT icon_rect{};
-  bool has_icon_rect = false;
   if (reposition) {
     NOTIFYICONIDENTIFIER nii{};
     nii.cbSize = sizeof(NOTIFYICONIDENTIFIER);
     nii.hWnd = owner_hwnd_;
     nii.uID = tray_icon_id_;
-    has_icon_rect = SUCCEEDED(::Shell_NotifyIconGetRect(&nii, &icon_rect));
-    if (has_icon_rect) {
+    if (SUCCEEDED(::Shell_NotifyIconGetRect(&nii, &icon_rect))) {
       last_icon_rect_ = icon_rect;
       has_last_icon_rect_ = true;
     } else {
@@ -574,7 +692,6 @@ void TrayPanelWindow::ComputeWindowBounds(bool reposition,
     }
   } else if (has_last_icon_rect_) {
     icon_rect = last_icon_rect_;
-    has_icon_rect = true;
   } else {
     RECT current{};
     ::GetWindowRect(hwnd_, &current);
@@ -589,7 +706,7 @@ void TrayPanelWindow::ComputeWindowBounds(bool reposition,
   ::GetMonitorInfoW(monitor, &mi);
 
   const int width = PxFromDip(kPanelWidthDip);
-  const int height = PxFromDip(layout_.panel_height_dip);
+  const int height = PxFromDip(CurrentPanelHeightDip());
   const int gap = PxFromDip(kAnchorGapDip);
   const int margin = PxFromDip(kWorkMarginDip);
 
@@ -599,28 +716,32 @@ void TrayPanelWindow::ComputeWindowBounds(bool reposition,
     RECT cur{};
     ::GetWindowRect(hwnd_, &cur);
     x = cur.left;
-    if (has_icon_rect && icon_rect.top >= mi.rcWork.bottom) {
-      y = cur.bottom - height;
-    } else {
-      y = cur.top;
-    }
+    y = anchor_bottom_ ? (cur.bottom - height) : cur.top;
   } else if (icon_rect.top >= mi.rcWork.bottom) {
     x = (icon_rect.left + icon_rect.right - width) / 2;
     y = (std::min)(icon_rect.top, mi.rcWork.bottom) - gap - height;
+    anchor_bottom_ = true;
   } else if (icon_rect.bottom <= mi.rcWork.top) {
     x = (icon_rect.left + icon_rect.right - width) / 2;
     y = (std::max)(icon_rect.bottom, mi.rcWork.top) + gap;
+    anchor_bottom_ = false;
   } else if (icon_rect.right <= mi.rcWork.left) {
     x = (std::max)(icon_rect.right, mi.rcWork.left) + gap;
     y = (icon_rect.top + icon_rect.bottom - height) / 2;
+    anchor_bottom_ =
+        (icon_rect.top + icon_rect.bottom) > (mi.rcWork.top + mi.rcWork.bottom);
   } else if (icon_rect.left >= mi.rcWork.right) {
     x = (std::min)(icon_rect.left, mi.rcWork.right) - gap - width;
     y = (icon_rect.top + icon_rect.bottom - height) / 2;
+    anchor_bottom_ =
+        (icon_rect.top + icon_rect.bottom) > (mi.rcWork.top + mi.rcWork.bottom);
   } else {
     x = icon_rect.left - width / 2;
     y = icon_rect.top - gap - height;
+    anchor_bottom_ = true;
     if (y < mi.rcWork.top + margin) {
       y = icon_rect.bottom + gap;
+      anchor_bottom_ = false;
     }
   }
 
@@ -648,6 +769,13 @@ void TrayPanelWindow::UpdateWindowSizeIfVisible() {
   int w = 0;
   int h = 0;
   ComputeWindowBounds(false, &x, &y, &w, &h);
+  RECT cur{};
+  if (::GetWindowRect(hwnd_, &cur)) {
+    if (cur.left == x && cur.top == y && (cur.right - cur.left) == w &&
+        (cur.bottom - cur.top) == h) {
+      return;
+    }
+  }
   ::SetWindowPos(hwnd_, nullptr, x, y, w, h,
                  SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE);
 }
@@ -672,11 +800,16 @@ void TrayPanelWindow::HideInternal(bool notify, bool from_deactivate) {
   hovered_key_ = 0;
   pressed_key_ = 0;
   tracking_mouse_ = false;
+  copied_feedback_ = false;
+  CancelAnimations();
   if (hwnd_ != nullptr && ::IsWindow(hwnd_)) {
     ::KillTimer(hwnd_, kSpinnerTimerId);
+    ::KillTimer(hwnd_, kCopyFeedbackTimerId);
     ::KillTimer(hwnd_, kCaretTimerId);
+    ::KillTimer(hwnd_, kAnimTimerId);
     ::ShowWindow(hwnd_, SW_HIDE);
   }
+  anim_timer_running_ = false;
   if (was_visible && notify && on_visibility_changed_) {
     on_visibility_changed_(false);
   }
@@ -689,6 +822,8 @@ void TrayPanelWindow::SyncTimers() {
   if (!is_visible_) {
     ::KillTimer(hwnd_, kSpinnerTimerId);
     ::KillTimer(hwnd_, kCaretTimerId);
+    ::KillTimer(hwnd_, kAnimTimerId);
+    anim_timer_running_ = false;
     return;
   }
 
@@ -721,6 +856,134 @@ void TrayPanelWindow::SyncTimers() {
   } else {
     ::KillTimer(hwnd_, kCaretTimerId);
   }
+
+  const bool need_anim = HasActiveAnimations();
+  if (need_anim && !anim_timer_running_) {
+    if (::SetTimer(hwnd_, kAnimTimerId, kAnimIntervalMs, nullptr) != 0) {
+      anim_timer_running_ = true;
+    }
+  } else if (!need_anim && anim_timer_running_) {
+    ::KillTimer(hwnd_, kAnimTimerId);
+    anim_timer_running_ = false;
+  }
+}
+
+void TrayPanelWindow::ApplyLocalLayoutChange(bool sync_timers) {
+  const float prev_height_dip = layout_.panel_height_dip;
+  RebuildFilteredGroups();
+  RebuildLayout();
+  ClampScroll();
+  if (is_visible_) {
+    StartHeightAnimationIfNeeded(prev_height_dip);
+  } else {
+    SnapAnimationsToCurrentState();
+  }
+  UpdateWindowSizeIfVisible();
+  if (sync_timers || HasActiveAnimations()) {
+    SyncTimers();
+  }
+  if (hwnd_ != nullptr) {
+    ::InvalidateRect(hwnd_, nullptr, FALSE);
+  }
+}
+
+void TrayPanelWindow::StartHeightAnimationIfNeeded(float prev_height_dip) {
+  const ULONGLONG now = ::GetTickCount64();
+  StepAnimationsAt(now);
+  const float current_dip =
+      height_anim_active_ ? anim_current_height_dip_ : prev_height_dip;
+  if (std::fabs(layout_.panel_height_dip - current_dip) < 0.5f) {
+    height_anim_active_ = false;
+    anim_start_height_dip_ = layout_.panel_height_dip;
+    anim_target_height_dip_ = layout_.panel_height_dip;
+    anim_current_height_dip_ = layout_.panel_height_dip;
+    return;
+  }
+  anim_start_height_dip_ = current_dip;
+  anim_target_height_dip_ = layout_.panel_height_dip;
+  anim_current_height_dip_ = current_dip;
+  height_anim_start_tick_ = now;
+  height_anim_active_ = true;
+}
+
+void TrayPanelWindow::SnapAnimationsToCurrentState() {
+  mode_anim_active_ = false;
+  last_mode_ = state_.mode;
+  const D2D1_RECT_F seg_rect = ModeSegmentRect(state_.mode);
+  mode_anim_from_rect_ = seg_rect;
+  mode_anim_to_rect_ = seg_rect;
+  pill_current_rect_ = seg_rect;
+
+  height_anim_active_ = false;
+  anim_start_height_dip_ = layout_.panel_height_dip;
+  anim_target_height_dip_ = layout_.panel_height_dip;
+  anim_current_height_dip_ = layout_.panel_height_dip;
+
+  proxies_anim_active_ = false;
+  proxies_anim_progress_ = 1.0f;
+  outgoing_proxies_.Reset();
+}
+
+void TrayPanelWindow::CancelAnimations() {
+  SnapAnimationsToCurrentState();
+}
+
+void TrayPanelWindow::StepAnimationsAt(ULONGLONG now) {
+  if (mode_anim_active_) {
+    const ULONGLONG elapsed =
+        now > mode_anim_start_tick_ ? now - mode_anim_start_tick_ : 0;
+    if (elapsed >= kModeAnimDurationMs) {
+      pill_current_rect_ = mode_anim_to_rect_;
+      mode_anim_active_ = false;
+    } else {
+      const float linear = static_cast<float>(elapsed) /
+                           static_cast<float>(kModeAnimDurationMs);
+      pill_current_rect_ = LerpRectF(mode_anim_from_rect_, mode_anim_to_rect_,
+                                     EaseOutCubic(linear));
+    }
+  }
+
+  if (height_anim_active_) {
+    const ULONGLONG elapsed =
+        now > height_anim_start_tick_ ? now - height_anim_start_tick_ : 0;
+    if (elapsed >= kLayoutAnimDurationMs) {
+      anim_current_height_dip_ = anim_target_height_dip_;
+      height_anim_active_ = false;
+    } else {
+      const float linear = static_cast<float>(elapsed) /
+                           static_cast<float>(kLayoutAnimDurationMs);
+      const float eased = EaseOutCubic(linear);
+      anim_current_height_dip_ =
+          anim_start_height_dip_ +
+          (anim_target_height_dip_ - anim_start_height_dip_) * eased;
+    }
+  }
+
+  if (proxies_anim_active_) {
+    const ULONGLONG elapsed =
+        now > proxies_anim_start_tick_ ? now - proxies_anim_start_tick_ : 0;
+    if (elapsed >= kLayoutAnimDurationMs) {
+      proxies_anim_progress_ = 1.0f;
+      proxies_anim_active_ = false;
+      outgoing_proxies_.Reset();
+    } else {
+      proxies_anim_progress_ = static_cast<float>(elapsed) /
+                               static_cast<float>(kLayoutAnimDurationMs);
+    }
+  }
+}
+
+bool TrayPanelWindow::HasActiveAnimations() const {
+  return mode_anim_active_ || height_anim_active_ || proxies_anim_active_;
+}
+
+float TrayPanelWindow::CurrentPanelHeightDip() const {
+  return height_anim_active_ ? anim_current_height_dip_
+                             : layout_.panel_height_dip;
+}
+
+D2D1_RECT_F TrayPanelWindow::ModeSegmentRect(const std::string& mode) const {
+  return layout_.mode_segment_rects[ModeIndexFromString(mode)];
 }
 
 void TrayPanelWindow::RebuildFilteredGroups() {
@@ -818,9 +1081,11 @@ void TrayPanelWindow::RebuildLayout() {
                                  HitKind::kModeDirect};
   for (int i = 0; i < 3; ++i) {
     const float sx = x0 + 3.0f + static_cast<float>(i) * (seg_w + 4.0f);
+    layout_.mode_segment_rects[i] =
+        D2D1::RectF(sx, seg_y0, sx + seg_w, seg_y1);
     layout_.hits.push_back(
         {MakeHitKey(static_cast<int>(mode_kinds[i])), mode_kinds[i],
-         D2D1::RectF(sx, seg_y0, sx + seg_w, seg_y1), true, false, 0, 0});
+         layout_.mode_segment_rects[i], true, false, 0, 0});
   }
   y += kModeH + kSectionGapDip;
 
@@ -1017,8 +1282,20 @@ void TrayPanelWindow::ClampScroll() {
 std::optional<TrayPanelWindow::HitTarget> TrayPanelWindow::HitTest(
     float dip_x,
     float dip_y) const {
+  const float current_h = CurrentPanelHeightDip();
+  const float footer_y = height_anim_active_
+                             ? (current_h - kFooterOffsetFromBottomDip)
+                             : layout_.footer_y_dip;
+  const float footer_dy = footer_y - layout_.footer_y_dip;
+  D2D1_RECT_F effective_vp = layout_.groups_viewport_rect;
+  if (height_anim_active_) {
+    const float max_vp_bottom =
+        current_h - kDividerOffsetFromBottomDip - kSectionGapDip;
+    effective_vp.bottom = (std::min)(effective_vp.bottom, max_vp_bottom);
+  }
   const bool in_viewport =
-      PointInRectF(layout_.groups_viewport_rect, dip_x, dip_y);
+      effective_vp.bottom > effective_vp.top &&
+      PointInRectF(effective_vp, dip_x, dip_y);
   for (const auto& hit : layout_.hits) {
     if (hit.in_scroll_viewport) {
       if (!in_viewport) {
@@ -1028,8 +1305,14 @@ std::optional<TrayPanelWindow::HitTarget> TrayPanelWindow::HitTest(
                        dip_y)) {
         return hit;
       }
-    } else if (PointInRectF(hit.rect, dip_x, dip_y)) {
-      return hit;
+    } else {
+      const D2D1_RECT_F rect =
+          (hit.rect.top >= layout_.footer_y_dip - 2.0f)
+              ? OffsetRectF(hit.rect, footer_dy)
+              : hit.rect;
+      if (PointInRectF(rect, dip_x, dip_y)) {
+        return hit;
+      }
     }
   }
   return std::nullopt;
@@ -1102,12 +1385,7 @@ void TrayPanelWindow::DispatchHit(const HitTarget& hit) {
         search_query_.clear();
       }
       caret_visible_ = true;
-      RebuildFilteredGroups();
-      RebuildLayout();
-      ClampScroll();
-      UpdateWindowSizeIfVisible();
-      SyncTimers();
-      ::InvalidateRect(hwnd_, nullptr, FALSE);
+      ApplyLocalLayoutChange(true);
       break;
     case HitKind::kSearchBox:
       ::SetFocus(hwnd_);
@@ -1117,11 +1395,7 @@ void TrayPanelWindow::DispatchHit(const HitTarget& hit) {
     case HitKind::kSearchClear:
       search_query_.clear();
       scroll_offset_dip_ = 0.0f;
-      RebuildFilteredGroups();
-      RebuildLayout();
-      ClampScroll();
-      UpdateWindowSizeIfVisible();
-      ::InvalidateRect(hwnd_, nullptr, FALSE);
+      ApplyLocalLayoutChange(false);
       break;
     case HitKind::kTestAllDelays:
       emit("testAllDelays");
@@ -1134,11 +1408,7 @@ void TrayPanelWindow::DispatchHit(const HitTarget& hit) {
         } else {
           expanded_groups_.insert(name);
         }
-        RebuildFilteredGroups();
-        RebuildLayout();
-        ClampScroll();
-        UpdateWindowSizeIfVisible();
-        ::InvalidateRect(hwnd_, nullptr, FALSE);
+        ApplyLocalLayoutChange(false);
       }
       break;
     case HitKind::kGroupTestDelay:
@@ -1187,6 +1457,18 @@ void TrayPanelWindow::Render() {
           : CompositeOver(state_.theme.glass_tint, state_.theme.card_bg);
   render_target_->Clear(ColorFromArgb(bg_argb));
 
+  RECT client{};
+  ::GetClientRect(hwnd_, &client);
+  const float client_height_dip =
+      DipFromPx(static_cast<int>((std::max)(1L, client.bottom - client.top)));
+  const float divider_y = height_anim_active_
+                              ? (client_height_dip - kDividerOffsetFromBottomDip)
+                              : layout_.divider_y_dip;
+  const float footer_y = height_anim_active_
+                             ? (client_height_dip - kFooterOffsetFromBottomDip)
+                             : layout_.footer_y_dip;
+  const float max_proxies_bottom = divider_y - kSectionGapDip;
+
   float y = kOuterPadDip;
   DrawHeader(y);
   y += 36.0f + kSectionGapDip;
@@ -1194,18 +1476,22 @@ void TrayPanelWindow::Render() {
   y += 34.0f + kSectionGapDip;
   DrawQuickToggles(y);
 
-  if (!state_.groups.empty()) {
-    DrawProxiesSection(layout_.groups_header_rect.top);
+  if (proxies_anim_active_) {
+    DrawAnimatedProxiesSection(max_proxies_bottom);
+  } else if (!state_.groups.empty()) {
+    DrawProxiesSectionContent(state_.groups, filtered_groups_, layout_,
+                              search_visible_, state_.testing_all,
+                              search_query_, scroll_offset_dip_,
+                              max_proxies_bottom, 1.0f, true);
   }
 
   brush_->SetColor(ColorFromArgb(state_.theme.hairline));
   render_target_->FillRectangle(
-      D2D1::RectF(kOuterPadDip, layout_.divider_y_dip,
-                  kPanelWidthDip - kOuterPadDip,
-                  layout_.divider_y_dip + 0.75f),
+      D2D1::RectF(kOuterPadDip, divider_y, kPanelWidthDip - kOuterPadDip,
+                  divider_y + 0.75f),
       brush_.Get());
 
-  DrawFooter(layout_.footer_y_dip);
+  DrawFooter(footer_y);
 
   const HRESULT hr = render_target_->EndDraw();
   if (hr == D2DERR_RECREATE_TARGET) {
@@ -1357,22 +1643,39 @@ void TrayPanelWindow::DrawOutboundMode(float y_top) {
       {HitKind::kModeDirect, "direct", &state_.labels.mode_direct},
   };
 
+  const D2D1_RECT_F pill_rect =
+      mode_anim_active_ ? pill_current_rect_ : ModeSegmentRect(state_.mode);
+
   for (const auto& m : modes) {
     for (const auto& hit : layout_.hits) {
       if (hit.kind != m.kind) {
         continue;
       }
-      const bool active = state_.mode == m.key;
-      const bool hovered = hovered_key_ == hit.key;
-      if (active) {
-        DrawRoundedCard(hit.rect, 10.0f, t.primary);
-      } else if (hovered) {
-        DrawRoundedCard(hit.rect, 10.0f, WithAlpha(t.on_surface, 0.06f));
+      const float overlap = RectHorizontalOverlapRatio(pill_rect, hit.rect);
+      if (hovered_key_ == hit.key && overlap < 0.5f) {
+        DrawRoundedCard(hit.rect, 10.0f,
+                        WithAlpha(t.on_surface, 0.06f * (1.0f - overlap)));
       }
-      DrawTextClipped(*m.label,
-                      active ? fmt_body_semibold_.Get() : fmt_body_.Get(),
-                      hit.rect, active ? t.on_primary : t.on_surface_variant,
-                      DWRITE_TEXT_ALIGNMENT_CENTER);
+      break;
+    }
+  }
+
+  if (pill_rect.right > pill_rect.left) {
+    DrawRoundedCard(pill_rect, 10.0f, t.primary);
+  }
+
+  for (const auto& m : modes) {
+    for (const auto& hit : layout_.hits) {
+      if (hit.kind != m.kind) {
+        continue;
+      }
+      const float overlap = RectHorizontalOverlapRatio(pill_rect, hit.rect);
+      const uint32_t text_color =
+          LerpArgb(t.on_surface_variant, t.on_primary, overlap);
+      DrawTextClipped(
+          *m.label,
+          overlap >= 0.5f ? fmt_body_semibold_.Get() : fmt_body_.Get(),
+          hit.rect, text_color, DWRITE_TEXT_ALIGNMENT_CENTER);
       break;
     }
   }
@@ -1511,9 +1814,75 @@ void TrayPanelWindow::DrawQuickToggles(float y_top) {
             state_.auto_launch);
 }
 
-void TrayPanelWindow::DrawProxiesSection(float y_top) {
+void TrayPanelWindow::DrawAnimatedProxiesSection(float max_bottom_dip) {
+  const float eased = EaseOutCubic(proxies_anim_progress_);
+  if (outgoing_proxies_.valid && state_.groups.empty()) {
+    const float out_alpha = 1.0f - eased;
+    if (out_alpha > 0.01f) {
+      DrawProxiesSectionContent(
+          outgoing_proxies_.groups, outgoing_proxies_.filtered_groups,
+          outgoing_proxies_.layout, outgoing_proxies_.search_visible,
+          outgoing_proxies_.testing_all, outgoing_proxies_.search_query,
+          outgoing_proxies_.scroll_offset_dip, max_bottom_dip, out_alpha,
+          false);
+    }
+    return;
+  }
+
+  if (!outgoing_proxies_.valid && !state_.groups.empty()) {
+    if (eased > 0.01f) {
+      DrawProxiesSectionContent(state_.groups, filtered_groups_, layout_,
+                                search_visible_, state_.testing_all,
+                                search_query_, scroll_offset_dip_,
+                                max_bottom_dip, eased, true);
+    }
+    return;
+  }
+
+  if (outgoing_proxies_.valid && !state_.groups.empty()) {
+    const float out_alpha = Clamp01(1.0f - proxies_anim_progress_ * 2.5f);
+    const float in_alpha =
+        Clamp01((proxies_anim_progress_ - 0.35f) / 0.65f);
+    if (out_alpha > 0.01f) {
+      DrawProxiesSectionContent(
+          outgoing_proxies_.groups, outgoing_proxies_.filtered_groups,
+          outgoing_proxies_.layout, outgoing_proxies_.search_visible,
+          outgoing_proxies_.testing_all, outgoing_proxies_.search_query,
+          outgoing_proxies_.scroll_offset_dip, max_bottom_dip, out_alpha,
+          false);
+    }
+    if (in_alpha > 0.01f) {
+      DrawProxiesSectionContent(state_.groups, filtered_groups_, layout_,
+                                search_visible_, state_.testing_all,
+                                search_query_, scroll_offset_dip_,
+                                max_bottom_dip, in_alpha, true);
+    }
+  }
+}
+
+void TrayPanelWindow::DrawProxiesSectionContent(
+    const std::vector<TrayPanelGroup>& groups,
+    const std::vector<FilteredGroup>& filtered_groups,
+    const PanelLayout& layout,
+    bool search_visible,
+    bool testing_all,
+    const std::wstring& search_query,
+    float scroll_offset_dip,
+    float max_bottom_dip,
+    float alpha_scale,
+    bool interactive) {
+  const D2D1_RECT_F& hdr = layout.groups_header_rect;
+  if (max_bottom_dip <= hdr.top + 1.0f) {
+    return;
+  }
+
+  const float prev_alpha_scale = draw_alpha_scale_;
+  draw_alpha_scale_ = prev_alpha_scale * Clamp01(alpha_scale);
+  render_target_->PushAxisAlignedClip(
+      D2D1::RectF(0.0f, hdr.top, kPanelWidthDip, max_bottom_dip),
+      D2D1_ANTIALIAS_MODE_ALIASED);
+
   const auto& t = state_.theme;
-  const D2D1_RECT_F& hdr = layout_.groups_header_rect;
   const float title_w =
       MeasureTextWidth(state_.labels.proxies, fmt_body_semibold_.Get(), 150.0f);
   DrawTextClipped(state_.labels.proxies, fmt_body_semibold_.Get(),
@@ -1523,7 +1892,7 @@ void TrayPanelWindow::DrawProxiesSection(float y_top) {
 
   wchar_t count_buf[16]{};
   ::StringCchPrintfW(count_buf, ARRAYSIZE(count_buf), L"%u",
-                     static_cast<unsigned>(filtered_groups_.size()));
+                     static_cast<unsigned>(filtered_groups.size()));
   const std::wstring count_str(count_buf);
   const float count_w =
       (std::max)(20.0f, MeasureTextWidth(count_str, fmt_badge_.Get(), 48.0f) + 12.0f);
@@ -1534,15 +1903,15 @@ void TrayPanelWindow::DrawProxiesSection(float y_top) {
   DrawTextClipped(count_str, fmt_badge_center_.Get(), count_rect,
                   t.on_surface_variant);
 
-  for (const auto& hit : layout_.hits) {
+  for (const auto& hit : layout.hits) {
     if (hit.kind == HitKind::kSearchToggle) {
-      const bool hovered = hovered_key_ == hit.key;
+      const bool hovered = interactive && hovered_key_ == hit.key;
       const uint32_t bg =
-          search_visible_
+          search_visible
               ? WithAlpha(t.primary, hovered ? 0.24f : 0.16f)
               : (hovered ? t.block_bg : t.card_bg);
       const uint32_t fg =
-          search_visible_ ? t.primary : t.on_surface_variant;
+          search_visible ? t.primary : t.on_surface_variant;
       DrawRoundedCard(hit.rect, 8.0f, bg);
       brush_->SetColor(ColorFromArgb(fg));
       const float cx = (hit.rect.left + hit.rect.right) * 0.5f - 1.0f;
@@ -1553,11 +1922,11 @@ void TrayPanelWindow::DrawProxiesSection(float y_top) {
                                D2D1::Point2F(cx + 5.8f, cy + 5.8f),
                                brush_.Get(), 1.5f);
     } else if (hit.kind == HitKind::kTestAllDelays) {
-      const bool hovered = hit.enabled && hovered_key_ == hit.key;
+      const bool hovered = interactive && hit.enabled && hovered_key_ == hit.key;
       DrawRoundedCard(hit.rect, 8.0f, hovered ? t.block_bg : t.card_bg);
       const float cx = (hit.rect.left + hit.rect.right) * 0.5f;
       const float cy = (hit.rect.top + hit.rect.bottom) * 0.5f;
-      if (state_.testing_all) {
+      if (testing_all) {
         DrawSpinner(cx, cy, 5.0f, t.primary);
       } else {
         brush_->SetColor(ColorFromArgb(t.on_surface_variant));
@@ -1580,8 +1949,8 @@ void TrayPanelWindow::DrawProxiesSection(float y_top) {
     }
   }
 
-  if (search_visible_) {
-    const D2D1_RECT_F& sbox = layout_.search_box_rect;
+  if (search_visible) {
+    const D2D1_RECT_F& sbox = layout.search_box_rect;
     DrawRoundedCard(sbox, 10.0f, t.inset_bg, WithAlpha(t.primary, 0.35f), 0.75f);
     brush_->SetColor(ColorFromArgb(t.on_surface_variant));
     const float gcx = sbox.left + 14.0f;
@@ -1594,13 +1963,13 @@ void TrayPanelWindow::DrawProxiesSection(float y_top) {
 
     const float text_left = sbox.left + 26.0f;
     const float text_right =
-        search_query_.empty() ? sbox.right - 10.0f : layout_.search_clear_rect.left - 4.0f;
+        search_query.empty() ? sbox.right - 10.0f : layout.search_clear_rect.left - 4.0f;
     const float field_w = (std::max)(20.0f, text_right - text_left);
-    if (search_query_.empty()) {
+    if (search_query.empty()) {
       DrawTextClipped(state_.labels.search, fmt_body_.Get(),
                       D2D1::RectF(text_left, sbox.top, text_right, sbox.bottom),
                       WithAlpha(t.on_surface_variant, 0.7f));
-      if (caret_visible_) {
+      if (interactive && caret_visible_) {
         brush_->SetColor(ColorFromArgb(t.primary));
         render_target_->DrawLine(
             D2D1::Point2F(text_left, sbox.top + 6.0f),
@@ -1608,19 +1977,19 @@ void TrayPanelWindow::DrawProxiesSection(float y_top) {
       }
     } else {
       const float q_width =
-          MeasureTextWidth(search_query_, fmt_body_.Get(), 4000.0f);
+          MeasureTextWidth(search_query, fmt_body_.Get(), 4000.0f);
       const float shift = q_width > field_w ? field_w - q_width : 0.0f;
       render_target_->PushAxisAlignedClip(
           D2D1::RectF(text_left, sbox.top, text_right, sbox.bottom),
           D2D1_ANTIALIAS_MODE_ALIASED);
       DrawTextClipped(
-          search_query_, fmt_body_.Get(),
+          search_query, fmt_body_.Get(),
           D2D1::RectF(text_left + shift, sbox.top,
                       text_left + shift + (std::max)(field_w, q_width + 4.0f),
                       sbox.bottom),
           t.on_surface);
       render_target_->PopAxisAlignedClip();
-      if (caret_visible_) {
+      if (interactive && caret_visible_) {
         const float cx = (std::min)(text_right - 1.0f, text_left + q_width + 1.0f);
         brush_->SetColor(ColorFromArgb(t.primary));
         render_target_->DrawLine(
@@ -1628,7 +1997,7 @@ void TrayPanelWindow::DrawProxiesSection(float y_top) {
             D2D1::Point2F(cx, sbox.bottom - 6.0f), brush_.Get(), 1.3f);
       }
 
-      const D2D1_RECT_F& cr = layout_.search_clear_rect;
+      const D2D1_RECT_F& cr = layout.search_clear_rect;
       const float ccx = (cr.left + cr.right) * 0.5f;
       const float ccy = (cr.top + cr.bottom) * 0.5f;
       brush_->SetColor(ColorFromArgb(t.on_surface_variant));
@@ -1644,47 +2013,56 @@ void TrayPanelWindow::DrawProxiesSection(float y_top) {
     }
   }
 
-  if (filtered_groups_.empty()) {
+  if (filtered_groups.empty()) {
     DrawTextClipped(state_.labels.no_proxies, fmt_body_.Get(),
-                    layout_.groups_viewport_rect,
+                    layout.groups_viewport_rect,
                     WithAlpha(t.on_surface_variant, 0.75f),
                     DWRITE_TEXT_ALIGNMENT_CENTER);
-    return;
-  }
+  } else {
+    D2D1_RECT_F vp = layout.groups_viewport_rect;
+    vp.bottom = (std::min)(vp.bottom, max_bottom_dip);
+    if (vp.bottom > vp.top) {
+      render_target_->PushAxisAlignedClip(vp, D2D1_ANTIALIAS_MODE_ALIASED);
+      render_target_->SetTransform(
+          D2D1::Matrix3x2F::Translation(0.0f, -scroll_offset_dip));
 
-  const D2D1_RECT_F& vp = layout_.groups_viewport_rect;
-  render_target_->PushAxisAlignedClip(vp, D2D1_ANTIALIAS_MODE_ALIASED);
-  render_target_->SetTransform(
-      D2D1::Matrix3x2F::Translation(0.0f, -scroll_offset_dip_));
+      for (const auto& card : layout.group_cards) {
+        if (card.group_index >= groups.size() ||
+            card.card_rect.bottom - scroll_offset_dip < vp.top - 4.0f ||
+            card.card_rect.top - scroll_offset_dip > vp.bottom + 4.0f) {
+          continue;
+        }
+        DrawGroupCard(card, groups[card.group_index], interactive);
+      }
 
-  for (const auto& card : layout_.group_cards) {
-    if (card.card_rect.bottom - scroll_offset_dip_ < vp.top - 4.0f ||
-        card.card_rect.top - scroll_offset_dip_ > vp.bottom + 4.0f) {
-      continue;
+      render_target_->SetTransform(D2D1::Matrix3x2F::Identity());
+      render_target_->PopAxisAlignedClip();
+
+      if (layout.max_scroll_dip > 0.5f) {
+        const float full_vp_h =
+            layout.groups_viewport_rect.bottom - layout.groups_viewport_rect.top;
+        const float thumb_h = (std::max)(
+            24.0f, full_vp_h * (full_vp_h / layout.groups_content_height_dip));
+        const float ratio = scroll_offset_dip / layout.max_scroll_dip;
+        const float thumb_y =
+            layout.groups_viewport_rect.top + ratio * (full_vp_h - thumb_h);
+        DrawRoundedCard(D2D1::RectF(vp.right - 3.5f, thumb_y, vp.right - 0.5f,
+                                    thumb_y + thumb_h),
+                        1.5f, WithAlpha(t.on_surface_variant, 0.32f));
+      }
     }
-    DrawGroupCard(card);
   }
 
-  render_target_->SetTransform(D2D1::Matrix3x2F::Identity());
   render_target_->PopAxisAlignedClip();
-
-  if (layout_.max_scroll_dip > 0.5f) {
-    const float vp_h = vp.bottom - vp.top;
-    const float thumb_h =
-        (std::max)(24.0f, vp_h * (vp_h / layout_.groups_content_height_dip));
-    const float ratio = scroll_offset_dip_ / layout_.max_scroll_dip;
-    const float thumb_y = vp.top + ratio * (vp_h - thumb_h);
-    DrawRoundedCard(
-        D2D1::RectF(vp.right - 3.5f, thumb_y, vp.right - 0.5f, thumb_y + thumb_h),
-        1.5f, WithAlpha(t.on_surface_variant, 0.32f));
-  }
+  draw_alpha_scale_ = prev_alpha_scale;
 }
 
-void TrayPanelWindow::DrawGroupCard(const GroupCardLayout& card) {
+void TrayPanelWindow::DrawGroupCard(const GroupCardLayout& card,
+                                    const TrayPanelGroup& group,
+                                    bool interactive) {
   const auto& t = state_.theme;
-  const auto& group = state_.groups[card.group_index];
   const bool header_hovered =
-      !card.expanded && hovered_key_ == card.header_key;
+      interactive && !card.expanded && hovered_key_ == card.header_key;
   DrawRoundedCard(card.card_rect, 14.0f,
                   header_hovered ? t.block_bg : t.card_bg);
 
@@ -1730,7 +2108,8 @@ void TrayPanelWindow::DrawGroupCard(const GroupCardLayout& card) {
                               header_top + 34.0f),
                   t.on_surface_variant);
 
-  const bool test_hovered = !group.testing && hovered_key_ == card.test_key;
+  const bool test_hovered =
+      interactive && !group.testing && hovered_key_ == card.test_key;
   DrawRoundedCard(card.test_rect, 7.0f,
                   test_hovered ? t.inset_bg : t.block_bg);
   const float tcx = (card.test_rect.left + card.test_rect.right) * 0.5f;
@@ -1777,14 +2156,17 @@ void TrayPanelWindow::DrawGroupCard(const GroupCardLayout& card) {
   }
 
   for (const auto& tile : card.tiles) {
-    DrawProxyTile(tile, group.proxies[tile.proxy_index]);
+    if (tile.proxy_index < group.proxies.size()) {
+      DrawProxyTile(tile, group.proxies[tile.proxy_index], interactive);
+    }
   }
 }
 
 void TrayPanelWindow::DrawProxyTile(const ProxyTileLayout& tile,
-                                    const TrayPanelProxy& proxy) {
+                                    const TrayPanelProxy& proxy,
+                                    bool interactive) {
   const auto& t = state_.theme;
-  const bool hovered = hovered_key_ == tile.hit_key;
+  const bool hovered = interactive && hovered_key_ == tile.hit_key;
   const uint32_t bg = proxy.selected
                           ? WithAlpha(t.primary, 0.14f)
                           : (hovered ? t.inset_bg : t.block_bg);
@@ -1854,40 +2236,41 @@ void TrayPanelWindow::DrawDelayBadge(const std::optional<int>& delay,
 
 void TrayPanelWindow::DrawFooter(float y_top) {
   const auto& t = state_.theme;
+  const float footer_dy = y_top - layout_.footer_y_dip;
   for (const auto& hit : layout_.hits) {
-    if (hit.rect.top < y_top - 2.0f) {
+    if (hit.rect.top < layout_.footer_y_dip - 2.0f) {
       continue;
     }
+    const D2D1_RECT_F rect = OffsetRectF(hit.rect, footer_dy);
     if (hit.kind == HitKind::kCopyEnv) {
       const bool hovered = hovered_key_ == hit.key;
       const uint32_t bg = copied_feedback_
                               ? WithAlpha(t.success, 0.16f)
                               : (hovered ? t.block_bg : t.card_bg);
       const uint32_t fg = copied_feedback_ ? t.success : t.on_surface_variant;
-      DrawRoundedCard(hit.rect, 10.0f, bg);
+      DrawRoundedCard(rect, 10.0f, bg);
 
       wchar_t port_buf[64]{};
       ::StringCchPrintfW(port_buf, ARRAYSIZE(port_buf), L"%ls :%d",
                          state_.labels.copy_env_var.c_str(), state_.port);
       const std::wstring label(port_buf);
 
-      float text_right = hit.rect.right - 8.0f;
+      float text_right = rect.right - 8.0f;
       if (!copied_feedback_ && !state_.shortcuts.copy_env.empty()) {
         const float sw = (std::min)(
             52.0f, MeasureTextWidth(state_.shortcuts.copy_env, fmt_badge_.Get(),
                                     52.0f) +
                        8.0f);
         const D2D1_RECT_F srect = D2D1::RectF(
-            text_right - sw, hit.rect.top + 6.0f, text_right,
-            hit.rect.bottom - 6.0f);
+            text_right - sw, rect.top + 6.0f, text_right, rect.bottom - 6.0f);
         DrawRoundedCard(srect, 4.0f, t.inset_bg);
         DrawTextClipped(state_.shortcuts.copy_env, fmt_badge_center_.Get(),
                         srect, t.on_surface_variant);
         text_right = srect.left - 4.0f;
       }
 
-      const float cy = (hit.rect.top + hit.rect.bottom) * 0.5f;
-      const float ix = hit.rect.left + 12.0f;
+      const float cy = (rect.top + rect.bottom) * 0.5f;
+      const float ix = rect.left + 12.0f;
       brush_->SetColor(ColorFromArgb(fg));
       if (copied_feedback_) {
         render_target_->DrawLine(D2D1::Point2F(ix - 3.0f, cy),
@@ -1908,21 +2291,19 @@ void TrayPanelWindow::DrawFooter(float y_top) {
       }
       DrawTextClipped(
           label, fmt_small_medium_.Get(),
-          D2D1::RectF(ix + 8.0f, hit.rect.top, text_right, hit.rect.bottom),
-          fg);
+          D2D1::RectF(ix + 8.0f, rect.top, text_right, rect.bottom), fg);
     } else if (hit.kind == HitKind::kShowWindow) {
       const bool hovered = hovered_key_ == hit.key;
-      DrawRoundedCard(hit.rect, 10.0f,
+      DrawRoundedCard(rect, 10.0f,
                       WithAlpha(t.primary, hovered ? 0.24f : 0.16f));
-      float text_right = hit.rect.right - 8.0f;
+      float text_right = rect.right - 8.0f;
       if (!state_.shortcuts.show_window.empty()) {
         const float sw = (std::min)(
             52.0f, MeasureTextWidth(state_.shortcuts.show_window,
                                     fmt_badge_.Get(), 52.0f) +
                        8.0f);
         const D2D1_RECT_F srect = D2D1::RectF(
-            text_right - sw, hit.rect.top + 6.0f, text_right,
-            hit.rect.bottom - 6.0f);
+            text_right - sw, rect.top + 6.0f, text_right, rect.bottom - 6.0f);
         DrawRoundedCard(srect, 4.0f, WithAlpha(t.primary, 0.14f));
         DrawTextClipped(state_.shortcuts.show_window, fmt_badge_center_.Get(),
                         srect, t.primary);
@@ -1930,8 +2311,7 @@ void TrayPanelWindow::DrawFooter(float y_top) {
       }
       DrawTextClipped(
           state_.labels.show_window, fmt_small_medium_.Get(),
-          D2D1::RectF(hit.rect.left + 8.0f, hit.rect.top, text_right,
-                      hit.rect.bottom),
+          D2D1::RectF(rect.left + 8.0f, rect.top, text_right, rect.bottom),
           t.primary, DWRITE_TEXT_ALIGNMENT_CENTER);
     }
   }
@@ -2039,7 +2419,8 @@ int TrayPanelWindow::PxFromDip(float dip) const {
 D2D1_COLOR_F TrayPanelWindow::ColorFromArgb(uint32_t argb,
                                             float alpha_scale) const {
   const float a =
-      (static_cast<float>((argb >> 24) & 0xFFU) / 255.0f) * alpha_scale;
+      (static_cast<float>((argb >> 24) & 0xFFU) / 255.0f) * alpha_scale *
+      draw_alpha_scale_;
   const float r = static_cast<float>((argb >> 16) & 0xFFU) / 255.0f;
   const float g = static_cast<float>((argb >> 8) & 0xFFU) / 255.0f;
   const float b = static_cast<float>(argb & 0xFFU) / 255.0f;
@@ -2198,19 +2579,10 @@ LRESULT TrayPanelWindow::HandleMessage(HWND hwnd,
         if (search_visible_ && !search_query_.empty()) {
           search_query_.clear();
           scroll_offset_dip_ = 0.0f;
-          RebuildFilteredGroups();
-          RebuildLayout();
-          ClampScroll();
-          UpdateWindowSizeIfVisible();
-          ::InvalidateRect(hwnd_, nullptr, FALSE);
+          ApplyLocalLayoutChange(false);
         } else if (search_visible_) {
           search_visible_ = false;
-          RebuildFilteredGroups();
-          RebuildLayout();
-          ClampScroll();
-          UpdateWindowSizeIfVisible();
-          SyncTimers();
-          ::InvalidateRect(hwnd_, nullptr, FALSE);
+          ApplyLocalLayoutChange(true);
         } else {
           HideInternal(true, false);
         }
@@ -2223,12 +2595,7 @@ LRESULT TrayPanelWindow::HandleMessage(HWND hwnd,
           search_query_.clear();
         }
         caret_visible_ = true;
-        RebuildFilteredGroups();
-        RebuildLayout();
-        ClampScroll();
-        UpdateWindowSizeIfVisible();
-        SyncTimers();
-        ::InvalidateRect(hwnd_, nullptr, FALSE);
+        ApplyLocalLayoutChange(true);
         return 0;
       }
       if (wparam == VK_BACK && search_visible_ && !search_query_.empty()) {
@@ -2242,11 +2609,7 @@ LRESULT TrayPanelWindow::HandleMessage(HWND hwnd,
         }
         caret_visible_ = true;
         scroll_offset_dip_ = 0.0f;
-        RebuildFilteredGroups();
-        RebuildLayout();
-        ClampScroll();
-        UpdateWindowSizeIfVisible();
-        ::InvalidateRect(hwnd_, nullptr, FALSE);
+        ApplyLocalLayoutChange(false);
         return 0;
       }
       break;
@@ -2258,11 +2621,7 @@ LRESULT TrayPanelWindow::HandleMessage(HWND hwnd,
           search_query_.push_back(ch);
           caret_visible_ = true;
           scroll_offset_dip_ = 0.0f;
-          RebuildFilteredGroups();
-          RebuildLayout();
-          ClampScroll();
-          UpdateWindowSizeIfVisible();
-          ::InvalidateRect(hwnd_, nullptr, FALSE);
+          ApplyLocalLayoutChange(false);
         }
         return 0;
       }
@@ -2285,8 +2644,32 @@ LRESULT TrayPanelWindow::HandleMessage(HWND hwnd,
         ::InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
       }
+      if (wparam == kAnimTimerId) {
+        if (!is_visible_) {
+          ::KillTimer(hwnd, kAnimTimerId);
+          anim_timer_running_ = false;
+          return 0;
+        }
+        const bool was_height_anim = height_anim_active_;
+        StepAnimationsAt(::GetTickCount64());
+        if (!HasActiveAnimations()) {
+          ::KillTimer(hwnd, kAnimTimerId);
+          anim_timer_running_ = false;
+        }
+        if (was_height_anim || height_anim_active_) {
+          UpdateWindowSizeIfVisible();
+        }
+        ::InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+      }
       break;
     case WM_DESTROY:
+      ::KillTimer(hwnd, kSpinnerTimerId);
+      ::KillTimer(hwnd, kCopyFeedbackTimerId);
+      ::KillTimer(hwnd, kCaretTimerId);
+      ::KillTimer(hwnd, kAnimTimerId);
+      anim_timer_running_ = false;
+      CancelAnimations();
       hwnd_ = nullptr;
       is_visible_ = false;
       return 0;
