@@ -29,7 +29,7 @@ jobs:
     name: Dart
     # A private copy pays for its Actions minutes, so it runs the checks only when
     # started by hand.
-    if: &checks github.event_name == 'workflow_dispatch' || !github.event.repository.private
+    if: &checks github.event_name == 'workflow_dispatch' || (!github.event.repository.private && !(github.repository != 'chen08209/FlClash' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '+') && !contains(github.ref_name, '-')))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
