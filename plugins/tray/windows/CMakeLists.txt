@@ -6,6 +6,10 @@ cmake_policy(VERSION 3.14...3.25)
 set(PLUGIN_NAME "tray_plugin")
 
 list(APPEND PLUGIN_SOURCES
+  "tray_panel_model.cpp"
+  "tray_panel_model.h"
+  "tray_panel_window.cpp"
+  "tray_panel_window.h"
   "tray_plugin.cpp"
   "tray_plugin.h"
 )
@@ -24,7 +28,13 @@ target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL)
 
 target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)
+target_link_libraries(${PLUGIN_NAME} PRIVATE
+  flutter
+  flutter_wrapper_plugin
+  d2d1
+  dwrite
+  dwmapi
+)
 
 set(tray_bundled_libraries
   ""

@@ -54,6 +54,8 @@ class AppTray implements TrayPort {
 
   bool _isTemplate(bool monochrome) => isMacOS && monochrome;
 
+  bool get _supportsPanel => isMacOS || isWindows;
+
   String _trayIconDir(bool monochrome) {
     if (isWindows) {
       return 'assets/images/tray/windows';
@@ -139,7 +141,7 @@ class AppTray implements TrayPort {
     required TrayState trayState,
     required ProviderReader read,
   }) async {
-    if (_isShutDown || !isMacOS || !Tray.instance.capabilities.panel) {
+    if (_isShutDown || !_supportsPanel || !Tray.instance.capabilities.panel) {
       return;
     }
     await Tray.instance.setPanelState(
@@ -148,7 +150,7 @@ class AppTray implements TrayPort {
   }
 
   Future<void> updatePanelTraffic(Traffic traffic) async {
-    if (_isShutDown || !isMacOS || !Tray.instance.capabilities.panel) {
+    if (_isShutDown || !_supportsPanel || !Tray.instance.capabilities.panel) {
       return;
     }
     await Tray.instance.setPanelTraffic(buildPanelTraffic(traffic));
@@ -178,6 +180,7 @@ class AppTray implements TrayPort {
       systemProxy: trayState.systemProxy,
       showTrayTitle: trayState.showTrayTitle,
       monochromeTrayIcon: trayState.monochromeTrayIcon,
+      showMacOSToggles: isMacOS,
       autoLaunch: trayState.autoLaunch,
       port: trayState.port,
       testingAll: _testingAllInFlight > 0,
@@ -418,7 +421,6 @@ class AppTray implements TrayPort {
   }) {
     final commonAction = read(commonActionProvider.notifier);
     final systemAction = read(systemActionProvider.notifier);
-    final setupAction = read(setupActionProvider.notifier);
     final appLocalizations = currentAppLocalizations;
     String? shortcut(HotAction action) => _shortcut(trayState, action);
     final showItem = TrayMenuAction(
@@ -428,6 +430,17 @@ class AppTray implements TrayPort {
         window?.show();
       },
     );
+    final startStopItem = TrayMenuCheckbox(
+      label: trayState.isStart ? appLocalizations.stop : appLocalizations.start,
+      checked: false,
+      detail: shortcut(HotAction.start),
+      onSelected: commonAction.toggleRunning,
+    );
+    final copyEnvItem = TrayMenuAction(
+      label: appLocalizations.copyEnvVar,
+      detail: shortcut(HotAction.copyEnv),
+      onSelected: systemAction.copyProxyEnv,
+    );
     final exitItem = TrayMenuAction(
       label: appLocalizations.exit,
       detail: shortcut(HotAction.exit),
@@ -436,28 +449,21 @@ class AppTray implements TrayPort {
       },
     );
 
+    if (_supportsPanel) {
+      return [
+        showItem,
+        startStopItem,
+        const TrayMenuSeparator(),
+        copyEnvItem,
+        const TrayMenuSeparator(),
+        exitItem,
+      ];
+    }
+
+    final setupAction = read(setupActionProvider.notifier);
     return [
       showItem,
-      TrayMenuCheckbox(
-        label: trayState.isStart
-            ? appLocalizations.stop
-            : appLocalizations.start,
-        checked: false,
-        detail: shortcut(HotAction.start),
-        onSelected: commonAction.toggleRunning,
-      ),
-      if (isMacOS) ...[
-        TrayMenuCheckbox(
-          label: appLocalizations.speedStatistics,
-          checked: trayState.showTrayTitle,
-          onSelected: commonAction.updateSpeedStatistics,
-        ),
-        TrayMenuCheckbox(
-          label: appLocalizations.monochromeIcon,
-          checked: trayState.monochromeTrayIcon,
-          onSelected: commonAction.updateMonochromeTrayIcon,
-        ),
-      ],
+      startStopItem,
       const TrayMenuSeparator(),
       for (final mode in Mode.values)
         TrayMenuCheckbox(
@@ -473,7 +479,6 @@ class AppTray implements TrayPort {
           },
         ),
       const TrayMenuSeparator(),
-      if (isMacOS) ..._buildGroupMenu(trayState: trayState, read: read),
       if (trayState.isStart) ...[
         TrayMenuCheckbox(
           label: appLocalizations.tun,
@@ -494,11 +499,7 @@ class AppTray implements TrayPort {
         checked: trayState.autoLaunch,
         onSelected: systemAction.updateAutoLaunch,
       ),
-      TrayMenuAction(
-        label: appLocalizations.copyEnvVar,
-        detail: shortcut(HotAction.copyEnv),
-        onSelected: systemAction.copyProxyEnv,
-      ),
+      copyEnvItem,
       const TrayMenuSeparator(),
       exitItem,
     ];
@@ -514,71 +515,6 @@ class AppTray implements TrayPort {
       isMacOS: isMacOS,
       isWindows: isWindows,
     ).text(hotKey.modifiers, key);
-  }
-
-  String? _delayText(int? delay) {
-    if (delay == null) {
-      return null;
-    }
-    return delay > 0
-        ? '$delay'
-        : delayFailureText(delay, currentAppLocalizations);
-  }
-
-  List<TrayMenuItem> _buildGroupMenu({
-    required TrayState trayState,
-    required ProviderReader read,
-  }) {
-    if (trayState.groups.isEmpty) {
-      return const [];
-    }
-    final delays = read(trayDelaysProvider);
-    final proxiesAction = read(proxiesActionProvider.notifier);
-    return [
-      for (final group in trayState.groups)
-        _buildGroupSubmenu(
-          group,
-          selectedName: read(selectedProxyNameProvider(group.name)),
-          delays: delays[group.name] ?? const {},
-          onSelected: (proxyName) {
-            proxiesAction.changeProxy(
-              groupName: group.name,
-              proxyName: proxyName,
-            );
-          },
-        ),
-      TrayMenuAction(
-        label: HotAction.delayTest.label,
-        detail: _shortcut(trayState, HotAction.delayTest),
-        onSelected: () {
-          proxiesAction.delayTestGroups(trayState.groups);
-        },
-      ),
-      const TrayMenuSeparator(),
-    ];
-  }
-
-  TrayMenuSubmenu _buildGroupSubmenu(
-    Group group, {
-    required String? selectedName,
-    required Map<String, int> delays,
-    required void Function(String proxyName) onSelected,
-  }) {
-    return TrayMenuSubmenu(
-      label: group.name,
-      detail: _delayText(delays[selectedName]),
-      items: [
-        for (final proxy in group.all)
-          TrayMenuCheckbox(
-            label: proxy.name,
-            checked: selectedName == proxy.name,
-            detail: _delayText(delays[proxy.name]),
-            onSelected: () {
-              onSelected(proxy.name);
-            },
-          ),
-      ],
-    );
   }
 }
 

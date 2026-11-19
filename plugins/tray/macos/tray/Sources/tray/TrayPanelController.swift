@@ -12,11 +12,46 @@ private final class TrayFloatingPanel: NSPanel {
     }
 }
 
-private final class TrayPanelHostingView<Content: View>: NSHostingView<Content> {
-    var onLayout: (() -> Void)?
+private final class TrayPanelContainerView: NSView {
+    private let cornerRadius: CGFloat
+
+    init(cornerRadius: CGFloat) {
+        self.cornerRadius = cornerRadius
+        super.init(frame: .zero)
+        wantsLayer = true
+        applyClipping()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
 
     override func layout() {
         super.layout()
+        applyClipping()
+    }
+
+    private func applyClipping() {
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerRadius = cornerRadius
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+    }
+}
+
+private final class TrayPanelHostingView<Content: View>: NSHostingView<Content> {
+    var onLayout: (() -> Void)?
+    var cornerRadius: CGFloat = 0
+
+    override func layout() {
+        super.layout()
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerRadius = cornerRadius
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
         onLayout?()
     }
 }
@@ -25,7 +60,7 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
     private static let panelWidth: CGFloat = 348
     private static let maxHeightCap: CGFloat = 600
     private static let minHeightFloor: CGFloat = 210
-    private static let cornerRadius: CGFloat = 20
+    private static let cornerRadius: CGFloat = 22
 
     let store = TrayPanelStore()
 
@@ -34,6 +69,7 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
 
     private weak var statusItem: TrayStatusItem?
     private var panel: TrayFloatingPanel?
+    private var containerView: TrayPanelContainerView?
     private var visualEffectView: NSVisualEffectView?
     private var hostingView: TrayPanelHostingView<TrayPanelView>?
 
@@ -100,6 +136,7 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
 
         panel.alphaValue = 0
         panel.makeKeyAndOrderFront(nil)
+        panel.invalidateShadow()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.14
             panel.animator().alphaValue = 1
@@ -140,6 +177,7 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
         panel?.delegate = nil
         panel?.contentView = nil
         panel = nil
+        containerView = nil
         visualEffectView = nil
         hostingView = nil
         statusItem = nil
@@ -202,42 +240,82 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
             self?.close()
         }
 
+        let container = TrayPanelContainerView(cornerRadius: Self.cornerRadius)
+
         let effectView = NSVisualEffectView()
+        effectView.translatesAutoresizingMaskIntoConstraints = false
         effectView.material = .popover
         effectView.blendingMode = .behindWindow
         effectView.state = .active
         effectView.wantsLayer = true
+        effectView.layer?.backgroundColor = NSColor.clear.cgColor
         effectView.layer?.cornerRadius = Self.cornerRadius
         effectView.layer?.cornerCurve = .continuous
         effectView.layer?.masksToBounds = true
+        effectView.maskImage = Self.makeContinuousMaskImage(cornerRadius: Self.cornerRadius)
 
         let rootView = TrayPanelView(store: store) { [weak self] action, payload in
             self?.onAction(action, payload)
         }
         let host = TrayPanelHostingView(rootView: rootView)
         host.translatesAutoresizingMaskIntoConstraints = false
+        host.cornerRadius = Self.cornerRadius
+        host.wantsLayer = true
+        host.layer?.backgroundColor = NSColor.clear.cgColor
+        host.layer?.cornerRadius = Self.cornerRadius
+        host.layer?.cornerCurve = .continuous
+        host.layer?.masksToBounds = true
         host.onLayout = { [weak self] in
             self?.scheduleResize()
         }
 
         effectView.addSubview(host)
+        container.addSubview(effectView)
         NSLayoutConstraint.activate([
+            effectView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            effectView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            effectView.topAnchor.constraint(equalTo: container.topAnchor),
+            effectView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             host.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
             host.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
             host.topAnchor.constraint(equalTo: effectView.topAnchor),
             host.bottomAnchor.constraint(equalTo: effectView.bottomAnchor),
         ])
 
-        createdPanel.contentView = effectView
+        createdPanel.contentView = container
         self.panel = createdPanel
+        self.containerView = container
         self.visualEffectView = effectView
         self.hostingView = host
+    }
+
+    private static func makeContinuousMaskImage(cornerRadius: CGFloat) -> NSImage {
+        // Keep the full continuous squircle lead-in (~1.53x radius) intact inside the 9-slice caps.
+        let inset = ceil(cornerRadius * 1.6)
+        let side = inset * 2 + 2
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            guard let context = NSGraphicsContext.current?.cgContext else {
+                return false
+            }
+            let maskLayer = CALayer()
+            maskLayer.frame = rect
+            maskLayer.backgroundColor = NSColor.black.cgColor
+            maskLayer.cornerRadius = cornerRadius
+            maskLayer.cornerCurve = .continuous
+            maskLayer.masksToBounds = true
+            maskLayer.render(in: context)
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: inset, left: inset, bottom: inset, right: inset)
+        image.resizingMode = .stretch
+        return image
     }
 
     private func applyAppearance() {
         let name: NSAppearance.Name = store.state.theme.isDark ? .darkAqua : .aqua
         let appearance = NSAppearance(named: name)
         panel?.appearance = appearance
+        containerView?.appearance = appearance
         visualEffectView?.appearance = appearance
     }
 
@@ -292,6 +370,7 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
             || abs(panel.frame.size.width - nextFrame.size.width) > 0.5
             || abs(panel.frame.size.height - nextFrame.size.height) > 0.5 {
             panel.setFrame(nextFrame, display: true)
+            panel.invalidateShadow()
         }
     }
 

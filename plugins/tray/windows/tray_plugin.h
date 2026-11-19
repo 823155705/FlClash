@@ -1,6 +1,9 @@
 #ifndef FLUTTER_PLUGIN_TRAY_PLUGIN_INTERNAL_H_
 #define FLUTTER_PLUGIN_TRAY_PLUGIN_INTERNAL_H_
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 
 #include <shellapi.h>
@@ -12,6 +15,9 @@
 #include <memory>
 #include <optional>
 #include <string>
+
+#include "tray_panel_model.h"
+#include "tray_panel_window.h"
 
 namespace tray {
 
@@ -56,6 +62,7 @@ class TrayPlugin : public flutter::Plugin {
   std::wstring tool_tip_;
   bool visible_ = false;
   bool icon_requested_ = false;
+  std::unique_ptr<TrayPanelWindow> panel_;
 
   UINT taskbar_created_message_ = 0;
   void(WINAPI* flush_menu_themes_)() = nullptr;

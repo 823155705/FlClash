@@ -53,13 +53,6 @@ class _TrayManagerState extends ConsumerState<TrayManager> {
       }
     });
     if (_tray?.isMacOS ?? system.isMacOS) {
-      if (!Tray.instance.capabilities.panel) {
-        ref.listenManual(trayDelaysProvider, (prev, next) {
-          if (!const DeepCollectionEquality().equals(prev, next)) {
-            _requestUpdate();
-          }
-        });
-      }
       ref.listenManual(trayTitleStateProvider, (prev, next) {
         if (prev != next) {
           _reportFailure(
@@ -73,7 +66,6 @@ class _TrayManagerState extends ConsumerState<TrayManager> {
     }
   }
 
-  /// A delay test changes the menu per proxy, so updates in flight coalesce.
   void _requestUpdate() {
     if (_isUpdating) {
       _hasPendingUpdate = true;
@@ -212,14 +204,23 @@ class _TrayManagerState extends ConsumerState<TrayManager> {
   void _handleTrayEvent(TrayEvent event) {
     switch (event) {
       case TrayIconActivated():
-        if (Tray.instance.capabilities.panel && _isPanelVisible) {
+        final capabilities = Tray.instance.capabilities;
+        if (capabilities.panel && capabilities.panelOnActivate) {
+          _reportFailure(Tray.instance.togglePanel());
+          return;
+        }
+        if (capabilities.panel && _isPanelVisible) {
           _reportFailure(Tray.instance.closePanel());
         }
         window?.show();
       case TrayMenuRequested():
-        if (Tray.instance.capabilities.panel) {
+        final capabilities = Tray.instance.capabilities;
+        if (capabilities.panel && !capabilities.panelOnActivate) {
           _reportFailure(Tray.instance.togglePanel());
         } else {
+          if (capabilities.panel && _isPanelVisible) {
+            _reportFailure(Tray.instance.closePanel());
+          }
           _reportFailure(Tray.instance.openMenu());
         }
       case TrayMenuItemSelected():

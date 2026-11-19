@@ -43,21 +43,6 @@ const flutter::EncodableMap* MapAt(const flutter::EncodableMap& map,
   return std::get_if<flutter::EncodableMap>(ValueAt(map, key));
 }
 
-std::wstring Utf16FromUtf8(const std::string& value) {
-  if (value.empty()) {
-    return std::wstring();
-  }
-  const int size = ::MultiByteToWideChar(
-      CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0);
-  if (size <= 0) {
-    return std::wstring();
-  }
-  std::wstring result(static_cast<size_t>(size), L'\0');
-  ::MultiByteToWideChar(CP_UTF8, 0, value.data(),
-                        static_cast<int>(value.size()), result.data(), size);
-  return result;
-}
-
 // Undocumented uxtheme ordinals Explorer uses for dark Win32 menus.
 constexpr DWORD kFirstBuildWithPreferredAppModeOrdinal = 18362;
 
@@ -135,6 +120,22 @@ TrayPlugin::TrayPlugin(
       });
   taskbar_created_message_ = ::RegisterWindowMessageW(L"TaskbarCreated");
   flush_menu_themes_ = AllowDarkMenus();
+  panel_ = std::make_unique<TrayPanelWindow>(
+      [this](bool visible) {
+        flutter::EncodableMap arguments;
+        arguments[flutter::EncodableValue("visible")] =
+            flutter::EncodableValue(visible);
+        SendEvent("onPanelVisibilityChanged",
+                  flutter::EncodableValue(arguments));
+      },
+      [this](const std::string& action, const flutter::EncodableMap& payload) {
+        flutter::EncodableMap arguments;
+        arguments[flutter::EncodableValue("action")] =
+            flutter::EncodableValue(action);
+        arguments[flutter::EncodableValue("payload")] =
+            flutter::EncodableValue(payload);
+        SendEvent("onPanelAction", flutter::EncodableValue(arguments));
+      });
 }
 
 TrayPlugin::~TrayPlugin() {
@@ -249,6 +250,9 @@ bool TrayPlugin::Show(const flutter::EncodableMap& arguments) {
     RebuildMenu(menu_, *items);
   }
 
+  if (panel_ != nullptr) {
+    panel_->SetOwner(MainWindow(), kTrayIconId);
+  }
   icon_requested_ = true;
   bool applied = ApplyIcon(!visible_);
   if (!applied && visible_) {
@@ -295,11 +299,17 @@ void TrayPlugin::Hide() {
 
   tool_tip_.clear();
   visible_ = false;
+  if (panel_ != nullptr) {
+    panel_->Destroy();
+  }
 }
 
 bool TrayPlugin::OpenMenu() {
   if (menu_ == nullptr || !visible_) {
     return false;
+  }
+  if (panel_ != nullptr) {
+    panel_->Close();
   }
 
   const HWND window = MainWindow();
@@ -330,12 +340,20 @@ std::optional<LRESULT> TrayPlugin::HandleWindowProc(HWND window,
   }
 
   if (message == kTrayCallbackMessage) {
-    if (lparam == WM_LBUTTONUP) {
+    if (lparam == WM_LBUTTONDOWN) {
+      if (panel_ != nullptr) {
+        panel_->NoteTrayIconPointerDown();
+      }
+    } else if (lparam == WM_LBUTTONUP) {
       SendEvent("onIconActivated", flutter::EncodableValue());
     } else if (lparam == WM_RBUTTONUP) {
       SendEvent("onMenuRequested", flutter::EncodableValue());
     }
     return std::nullopt;
+  }
+
+  if (message == WM_DISPLAYCHANGE && panel_ != nullptr && panel_->IsVisible()) {
+    panel_->Close();
   }
 
   if (flush_menu_themes_ != nullptr && IsColorSetChange(message, lparam)) {
@@ -353,6 +371,9 @@ std::optional<LRESULT> TrayPlugin::HandleWindowProc(HWND window,
       (message == WM_POWERBROADCAST && (wparam == PBT_APMRESUMEAUTOMATIC ||
                                         wparam == PBT_APMRESUMESUSPEND));
   if (should_restore && icon_requested_) {
+    if (panel_ != nullptr && panel_->IsVisible()) {
+      panel_->Close();
+    }
     RestoreIcon();
   }
 
@@ -385,6 +406,60 @@ void TrayPlugin::HandleMethodCall(
 
   if (method == "setTitle") {
     result->Success(flutter::EncodableValue(false));
+    return;
+  }
+
+  if (method == "setPanelState") {
+    const auto* arguments =
+        std::get_if<flutter::EncodableMap>(method_call.arguments());
+    TrayPanelState state;
+    const bool decoded = arguments != nullptr && DecodePanelState(*arguments, &state);
+    if (decoded && panel_ != nullptr) {
+      panel_->SetOwner(MainWindow(), kTrayIconId);
+      result->Success(flutter::EncodableValue(panel_->SetState(state)));
+    } else {
+      result->Success(flutter::EncodableValue(false));
+    }
+    return;
+  }
+
+  if (method == "setPanelTraffic") {
+    const auto* arguments =
+        std::get_if<flutter::EncodableMap>(method_call.arguments());
+    TrayPanelTraffic traffic;
+    if (arguments != nullptr && DecodePanelTraffic(*arguments, &traffic) &&
+        panel_ != nullptr) {
+      panel_->SetTraffic(traffic);
+      result->Success(flutter::EncodableValue(true));
+    } else {
+      result->Success(flutter::EncodableValue(false));
+    }
+    return;
+  }
+
+  if (method == "openPanel") {
+    if (visible_ && panel_ != nullptr) {
+      panel_->SetOwner(MainWindow(), kTrayIconId);
+      result->Success(flutter::EncodableValue(panel_->Open()));
+    } else {
+      result->Success(flutter::EncodableValue(false));
+    }
+    return;
+  }
+
+  if (method == "closePanel") {
+    result->Success(
+        flutter::EncodableValue(panel_ != nullptr && panel_->Close()));
+    return;
+  }
+
+  if (method == "togglePanel") {
+    if (visible_ && panel_ != nullptr) {
+      panel_->SetOwner(MainWindow(), kTrayIconId);
+      result->Success(flutter::EncodableValue(panel_->Toggle()));
+    } else {
+      result->Success(flutter::EncodableValue(false));
+    }
     return;
   }
 

@@ -435,6 +435,7 @@ final class TrayPanelState {
     required this.systemProxy,
     required this.showTrayTitle,
     this.monochromeTrayIcon = false,
+    this.showMacOSToggles = true,
     required this.autoLaunch,
     required this.port,
     this.testingAll = false,
@@ -452,6 +453,7 @@ final class TrayPanelState {
   final bool systemProxy;
   final bool showTrayTitle;
   final bool monochromeTrayIcon;
+  final bool showMacOSToggles;
   final bool autoLaunch;
   final int port;
   final bool testingAll;
@@ -470,6 +472,7 @@ final class TrayPanelState {
       'systemProxy': systemProxy,
       'showTrayTitle': showTrayTitle,
       'monochromeTrayIcon': monochromeTrayIcon,
+      'showMacOSToggles': showMacOSToggles,
       'autoLaunch': autoLaunch,
       'port': port,
       'testingAll': testingAll,
@@ -496,6 +499,7 @@ final class TrayPanelState {
         other.systemProxy == systemProxy &&
         other.showTrayTitle == showTrayTitle &&
         other.monochromeTrayIcon == monochromeTrayIcon &&
+        other.showMacOSToggles == showMacOSToggles &&
         other.autoLaunch == autoLaunch &&
         other.port == port &&
         other.testingAll == testingAll &&
@@ -516,6 +520,7 @@ final class TrayPanelState {
       systemProxy,
       showTrayTitle,
       monochromeTrayIcon,
+      showMacOSToggles,
       autoLaunch,
       port,
       testingAll,

@@ -8,6 +8,7 @@ final class TrayCapabilities {
     required this.iconEvents,
     required this.menuControl,
     required this.panel,
+    required this.panelOnActivate,
   });
 
   final bool supported;
@@ -16,6 +17,7 @@ final class TrayCapabilities {
   final bool iconEvents;
   final bool menuControl;
   final bool panel;
+  final bool panelOnActivate;
 
   // AppKit can orphan a status item's tooltip panel across sleep and title
   // resizes, leaving an empty box under the menu bar until the app quits.
@@ -26,6 +28,7 @@ final class TrayCapabilities {
     iconEvents: true,
     menuControl: true,
     panel: true,
+    panelOnActivate: true,
   );
 
   static const TrayCapabilities windows = TrayCapabilities(
@@ -34,7 +37,8 @@ final class TrayCapabilities {
     toolTip: true,
     iconEvents: true,
     menuControl: true,
-    panel: false,
+    panel: true,
+    panelOnActivate: true,
   );
 
   static const TrayCapabilities linux = TrayCapabilities(
@@ -44,6 +48,7 @@ final class TrayCapabilities {
     iconEvents: false,
     menuControl: false,
     panel: false,
+    panelOnActivate: false,
   );
 
   static const TrayCapabilities none = TrayCapabilities(
@@ -53,6 +58,7 @@ final class TrayCapabilities {
     iconEvents: false,
     menuControl: false,
     panel: false,
+    panelOnActivate: false,
   );
 
   static TrayCapabilities of(TargetPlatform platform) {

@@ -59,14 +59,15 @@ struct TrayPanelView: View {
         .padding(14)
         .frame(width: 348)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(theme.color(theme.glassTint))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .strokeBorder(theme.color(theme.hairline), lineWidth: 0.75)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(Color.clear)
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -432,6 +433,7 @@ struct TrayPanelView: View {
                         }
                     )
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .frame(height: min(max(groupsContentHeight, 44), maxGroupsScrollHeight))
             }
         }

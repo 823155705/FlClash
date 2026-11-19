@@ -123,14 +123,22 @@ public class TrayPlugin: NSObject, FlutterPlugin {
         guard let statusItem = statusItem, let menu = menu else {
             return false
         }
+        if panelController.isVisible {
+            panelController.close()
+        }
         statusItem.openMenu(menu)
         return true
     }
 
     private func makeStatusItem() -> TrayStatusItem? {
-        guard let item = TrayStatusItem(onMenuRequested: { [weak self] in
-            self?.channel.invokeMethod("onMenuRequested", arguments: nil)
-        }) else {
+        guard let item = TrayStatusItem(
+            onIconActivated: { [weak self] in
+                self?.channel.invokeMethod("onIconActivated", arguments: nil)
+            },
+            onMenuRequested: { [weak self] in
+                self?.channel.invokeMethod("onMenuRequested", arguments: nil)
+            }
+        ) else {
             return nil
         }
         statusItem = item
