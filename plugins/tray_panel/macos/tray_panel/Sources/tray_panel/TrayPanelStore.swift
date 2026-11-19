@@ -486,11 +486,21 @@ final class TrayPanelStore: ObservableObject {
 
     private var copiedResetWorkItem: DispatchWorkItem?
 
-    func updateState(from dict: [String: Any]) {
+    func updateState(from dict: [String: Any], animated: Bool = false) {
         let next = TrayPanelState(from: dict)
-        state = next
-        let validNames = Set(next.groups.map(\.name))
-        expandedGroupNames.formIntersection(validNames)
+        guard next != state else {
+            return
+        }
+        let apply = {
+            self.state = next
+            let validNames = Set(next.groups.map(\.name))
+            self.expandedGroupNames.formIntersection(validNames)
+        }
+        if animated {
+            withAnimation(.easeInOut(duration: 0.18), apply)
+        } else {
+            apply()
+        }
     }
 
     func updateTraffic(from dict: [String: Any]) {

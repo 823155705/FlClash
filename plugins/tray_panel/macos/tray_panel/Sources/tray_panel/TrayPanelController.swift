@@ -141,10 +141,10 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
     }
 
     func updateState(_ dict: [String: Any]) {
-        store.updateState(from: dict)
+        store.updateState(from: dict, animated: isVisible)
         applyAppearance()
         if isVisible {
-            scheduleResize()
+            repositionPanel(animated: true)
         }
     }
 
@@ -158,7 +158,7 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
             return false
         }
         if isVisible {
-            repositionPanel()
+            repositionPanel(animated: false)
             panel?.makeKeyAndOrderFront(nil)
             return true
         }
@@ -170,7 +170,7 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
 
         updateMaxPanelHeight(for: button)
         applyAppearance()
-        repositionPanel()
+        repositionPanel(animated: false)
 
         panel.alphaValue = 0
         panel.makeKeyAndOrderFront(nil)
@@ -316,7 +316,6 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
             host.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
             host.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
             host.topAnchor.constraint(equalTo: effectView.topAnchor),
-            host.bottomAnchor.constraint(equalTo: effectView.bottomAnchor),
         ])
 
         createdPanel.contentView = container
@@ -373,12 +372,12 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
             }
             self.resizeScheduled = false
             if self.isVisible {
-                self.repositionPanel()
+                self.repositionPanel(animated: true)
             }
         }
     }
 
-    private func repositionPanel() {
+    private func repositionPanel(animated: Bool = false) {
         guard let panel = panel,
               let hostingView = hostingView,
               let button = resolveStatusButton(),
@@ -406,7 +405,15 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
             || abs(panel.frame.origin.y - nextFrame.origin.y) > 0.5
             || abs(panel.frame.size.width - nextFrame.size.width) > 0.5
             || abs(panel.frame.size.height - nextFrame.size.height) > 0.5 {
-            panel.setFrame(nextFrame, display: true)
+            if animated {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.18
+                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    panel.animator().setFrame(nextFrame, display: true)
+                }
+            } else {
+                panel.setFrame(nextFrame, display: true)
+            }
             panel.invalidateShadow()
         }
     }
