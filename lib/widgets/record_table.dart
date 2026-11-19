@@ -47,9 +47,6 @@ RecordSort? nextRecordSort<T>(RecordSort? sort, RecordColumn<T> column) {
 class RecordSorter<T> {
   List<T>? _source;
   RecordSort? _sortedBy;
-  bool? _reverse;
-  List<Comparable<Object>> _keys = const [];
-  List<int> _order = const [];
   List<T> _sorted = const [];
 
   /// [reverse] marks a list shown bottom up, its last item on top.
@@ -65,57 +62,25 @@ class RecordSorter<T> {
               .firstWhereOrNull((column) => column.id == sort.columnId)
               ?.sortKey;
     if (sort == null || sortKey == null) {
-      _source = null;
-      _sortedBy = null;
-      _reverse = null;
-      _keys = const [];
-      _order = const [];
-      _sorted = const [];
       return items;
     }
-    if (identical(_source, items) && _sortedBy == sort && _reverse == reverse) {
+    if (identical(_source, items) && _sortedBy == sort) {
       return _sorted;
     }
-    final canReuseOrder =
-        _source != null &&
-        _sortedBy == sort &&
-        _reverse == reverse &&
-        items.length == _source!.length;
-    final keys = List<Comparable<Object>>.generate(items.length, (index) {
-      if (canReuseOrder && identical(items[index], _source![index])) {
-        return _keys[index];
-      }
-      return sortKey(items[index]);
-    });
-    if (canReuseOrder) {
-      var keysUnchanged = true;
-      for (var index = 0; index < keys.length; index++) {
-        if (!identical(keys[index], _keys[index]) &&
-            keys[index].compareTo(_keys[index]) != 0) {
-          keysUnchanged = false;
-          break;
-        }
-      }
-      if (keysUnchanged) {
-        _source = items;
-        _keys = keys;
-        return _sorted = [for (final index in _order) items[index]];
-      }
-    }
-    final direction = sort.descending == reverse ? 1 : -1;
+    final shown = reverse ? items.reversed.toList() : items;
+    final keys = [for (final item in shown) sortKey(item)];
+    final direction = sort.descending ? -1 : 1;
     // Sorting indexes keeps ties in their shown order; collection's
     // mergeSort is stable too but measured over ten times slower.
-    final order = List.generate(items.length, (index) => index)
+    final order = List.generate(shown.length, (index) => index)
       ..sort((a, b) {
         final compared = keys[a].compareTo(keys[b]);
         return compared != 0 ? direction * compared : a - b;
       });
+    final sorted = [for (final index in order) shown[index]];
     _source = items;
     _sortedBy = sort;
-    _reverse = reverse;
-    _keys = keys;
-    _order = order;
-    return _sorted = [for (final index in order) items[index]];
+    return _sorted = reverse ? sorted.reversed.toList() : sorted;
   }
 }
 
@@ -168,14 +133,12 @@ class RecordTable<T> {
   final List<TableColumn> layouts;
   final List<double> widths;
   final double rowHeight;
-  final bool sorted;
 
   const RecordTable._({
     required this.columns,
     required this.layouts,
     required this.widths,
     required this.rowHeight,
-    required this.sorted,
   });
 
   List<Widget> cellsOf(BuildContext context, T item) => [
@@ -232,12 +195,10 @@ class _RecordTableFrameState<T> extends ConsumerState<RecordTableFrame<T>>
         MediaQuery.textScalerOf(context).scale(_recordCellLineHeight) +
         _recordRowPadding * 2;
     // Rows are memoized on the table, so a refresh must get the same one.
-    final sorted = _sort != null;
     final inputs = (
       width,
       columnWidths,
       rowHeight,
-      sorted,
       Localizations.localeOf(context),
       Theme.of(context),
     );
@@ -257,7 +218,6 @@ class _RecordTableFrameState<T> extends ConsumerState<RecordTableFrame<T>>
         columnWidths,
       ),
       rowHeight: rowHeight,
-      sorted: sorted,
     );
   }
 

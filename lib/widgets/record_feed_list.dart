@@ -16,9 +16,7 @@ class RecordFeedList<T> extends StatefulWidget {
   final EdgeInsetsGeometry? padding;
   final bool reverse;
   final bool shrinkWrap;
-  final bool preserveStripes;
   final double gap;
-  final double? itemExtent;
   final double estimatedItemExtent;
 
   const RecordFeedList({
@@ -32,9 +30,7 @@ class RecordFeedList<T> extends StatefulWidget {
     this.padding,
     this.reverse = false,
     this.shrinkWrap = false,
-    this.preserveStripes = true,
     this.gap = 0,
-    this.itemExtent,
   });
 
   @override
@@ -70,14 +66,6 @@ class _RecordFeedListState<T> extends State<RecordFeedList<T>>
       if (isAt(shifted)) {
         return shifted;
       }
-      if (_trimmed == 0) {
-        if (isAt(before + 1)) {
-          return before + 1;
-        }
-        if (isAt(before - 1)) {
-          return before - 1;
-        }
-      }
     }
     return (_indexes ??= {
       for (final (index, item) in items.indexed) widget.keyOf(item): index,
@@ -87,8 +75,7 @@ class _RecordFeedListState<T> extends State<RecordFeedList<T>>
   @override
   void didUpdateWidget(RecordFeedList<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (identical(oldWidget.items, widget.items) &&
-        oldWidget.preserveStripes == widget.preserveStripes) {
+    if (identical(oldWidget.items, widget.items)) {
       return;
     }
     _indexes = null;
@@ -96,19 +83,11 @@ class _RecordFeedListState<T> extends State<RecordFeedList<T>>
     _built = {};
     _trimmed = 0;
     final items = widget.items;
-    if (!widget.preserveStripes || items.isEmpty || oldWidget.items.isEmpty) {
+    if (items.isEmpty) {
       _stripeShift = 0;
       return;
     }
     final first = widget.keyOf(items.first);
-    if (widget.keyOf(oldWidget.items.first) == first) {
-      return;
-    }
-    if (items.length > 1 &&
-        widget.keyOf(items[1]) == widget.keyOf(oldWidget.items.first)) {
-      _stripeShift ^= 1;
-      return;
-    }
     final trimmed = oldWidget.items.indexWhere(
       (item) => widget.keyOf(item) == first,
     );
@@ -131,7 +110,6 @@ class _RecordFeedListState<T> extends State<RecordFeedList<T>>
       scrollCacheExtent: arrivalCacheExtent,
       itemCount: widget.items.length,
       gap: widget.gap,
-      itemExtent: widget.itemExtent,
       estimatedItemExtent: widget.estimatedItemExtent,
       findChildIndexCallback: _indexOf,
       anchorAtEnd: true,
