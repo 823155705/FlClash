@@ -167,8 +167,9 @@ void main() {
         onSurface,
       );
 
-      final primary = ColorScheme.of(videoContext).primary;
-      expect(rowSwatchColor(tester, 'Video Stream'), primary);
+      expect(rowSwatchColor(tester, 'Video Stream'), const Color(0xFF3B82F6));
+      expect(rowSwatchColor(tester, 'File Sync'), const Color(0xFF14B8A6));
+      expect(rowSwatchColor(tester, 'Web Browser'), const Color(0xFFFB923C));
 
       double rowY(String name) => tester.getTopLeft(find.text(name)).dy;
       expect(rowY('Video Stream'), lessThan(rowY('Cloud Backup')));
@@ -176,7 +177,7 @@ void main() {
       await tester.tap(find.text('Upload'));
       await tester.pumpAndSettle();
       expect(rowY('Cloud Backup'), lessThan(rowY('Video Stream')));
-      expect(rowSwatchColor(tester, 'Cloud Backup'), primary);
+      expect(rowSwatchColor(tester, 'Cloud Backup'), const Color(0xFF3B82F6));
       expect(find.textContaining('Peak 06:00 · 210B'), findsOneWidget);
 
       final plotRect = tester.getRect(chartPlot());

@@ -11,9 +11,18 @@ void main(List<String> args) async {
     }
     await FlutterRustBridgeNativeAssetsBuilder(
       cratePath: 'rust',
-      extraCargoEnvironmentVariables: _bindgenEnvironment(input),
+      extraCargoEnvironmentVariables: _cargoEnvironment(input),
     ).run(input: input, output: output);
   });
+}
+
+Map<String, String> _cargoEnvironment(BuildInput input) {
+  if (input.config.buildCodeAssets && input.config.code.targetOS == OS.macOS) {
+    // Apple strip on macOS 27 leaves LC_SYMTAB.stroff 4-byte aligned when
+    // the indirect symbol count is odd, which dyld rejects at load time.
+    return const {'CARGO_PROFILE_RELEASE_STRIP': 'none'};
+  }
+  return _bindgenEnvironment(input);
 }
 
 // rquickjs runs bindgen on Android, which must load the NDK's libclang; Linux

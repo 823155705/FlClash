@@ -1,15 +1,23 @@
+import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' show Brightness;
+
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/models.dart';
 import 'package:fl_clash/providers/providers.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:prism_ui/prism_ui.dart';
 import 'package:tray/tray.dart';
 
 import 'app_localizations.dart';
-import 'l10n_labels.dart';
 import 'app_ports.dart';
+import 'compute.dart';
 import 'constant.dart';
 import 'keyboard.dart';
+import 'l10n_labels.dart';
+import 'num.dart';
 import 'provider_reader.dart';
+import 'string.dart';
 import 'system.dart';
 import 'window.dart';
 
@@ -20,6 +28,7 @@ class AppTray implements TrayPort {
   final bool isWindows;
 
   bool _isShutDown = false;
+  int _testingAllInFlight = 0;
 
   AppTray._internal({required this.isMacOS, required this.isWindows});
 
@@ -79,6 +88,7 @@ class AppTray implements TrayPort {
     // Removing a status item makes macOS forget where the user dragged it in
     // the menu bar; one that goes away with the process keeps its place.
     if (isMacOS) {
+      await Tray.instance.closePanel();
       return;
     }
     await Tray.instance.hide();
@@ -112,6 +122,7 @@ class AppTray implements TrayPort {
       ),
     );
     await updateTitle(showTrayTitle: trayState.showTrayTitle, traffic: traffic);
+    await updatePanel(trayState: trayState, read: read);
   }
 
   Future<void> updateTitle({
@@ -122,6 +133,283 @@ class AppTray implements TrayPort {
       return;
     }
     await Tray.instance.setTitle(showTrayTitle ? traffic.trayTitle : '');
+  }
+
+  Future<void> updatePanel({
+    required TrayState trayState,
+    required ProviderReader read,
+  }) async {
+    if (_isShutDown || !isMacOS || !Tray.instance.capabilities.panel) {
+      return;
+    }
+    await Tray.instance.setPanelState(
+      buildPanelState(trayState: trayState, read: read),
+    );
+  }
+
+  Future<void> updatePanelTraffic(Traffic traffic) async {
+    if (_isShutDown || !isMacOS || !Tray.instance.capabilities.panel) {
+      return;
+    }
+    await Tray.instance.setPanelTraffic(buildPanelTraffic(traffic));
+  }
+
+  @visibleForTesting
+  TrayPanelTraffic buildPanelTraffic(Traffic traffic) {
+    return TrayPanelTraffic(
+      up: '${traffic.up.shortTraffic.show}/s',
+      down: '${traffic.down.shortTraffic.show}/s',
+    );
+  }
+
+  @visibleForTesting
+  TrayPanelState buildPanelState({
+    required TrayState trayState,
+    required ProviderReader read,
+  }) {
+    final appLocalizations = currentAppLocalizations;
+    String shortcut(HotAction action) => _shortcut(trayState, action) ?? '';
+    return TrayPanelState(
+      isStart: trayState.isStart,
+      suspended: trayState.suspended,
+      safeMode: trayState.safeMode,
+      mode: trayState.mode.name,
+      tunEnable: trayState.tunEnable,
+      systemProxy: trayState.systemProxy,
+      showTrayTitle: trayState.showTrayTitle,
+      monochromeTrayIcon: trayState.monochromeTrayIcon,
+      autoLaunch: trayState.autoLaunch,
+      port: trayState.port,
+      testingAll: _testingAllInFlight > 0,
+      theme: _buildPanelTheme(read),
+      labels: TrayPanelLabels(
+        appName: appName,
+        showWindow: appLocalizations.show,
+        start: appLocalizations.start,
+        stop: appLocalizations.stop,
+        modeRule: Mode.rule.label,
+        modeGlobal: Mode.global.label,
+        modeDirect: Mode.direct.label,
+        tun: appLocalizations.tun,
+        systemProxy: appLocalizations.systemProxy,
+        speedStatistics: appLocalizations.speedStatistics,
+        monochromeIcon: appLocalizations.monochromeIcon,
+        autoLaunch: appLocalizations.autoLaunch,
+        proxies: appLocalizations.proxies,
+        search: appLocalizations.search,
+        testAllDelays: HotAction.delayTest.label,
+        delayTest: appLocalizations.delayTest,
+        timeout: appLocalizations.timeout,
+        delayFailed: appLocalizations.delayFailed,
+        copyEnvVar: appLocalizations.copyEnvVar,
+        exit: appLocalizations.exit,
+        noProxies: appLocalizations.nullTip(appLocalizations.proxies),
+        safeMode: appLocalizations.safeMode,
+      ),
+      shortcuts: TrayPanelShortcuts(
+        showWindow: shortcut(HotAction.view),
+        toggleRunning: shortcut(HotAction.start),
+        modeRule: shortcut(HotAction.ruleMode),
+        modeGlobal: shortcut(HotAction.globalMode),
+        modeDirect: shortcut(HotAction.directMode),
+        testAllDelays: shortcut(HotAction.delayTest),
+        tun: shortcut(HotAction.tun),
+        systemProxy: shortcut(HotAction.proxy),
+        copyEnv: shortcut(HotAction.copyEnv),
+        exit: shortcut(HotAction.exit),
+      ),
+      groups: _buildPanelGroups(trayState: trayState, read: read),
+    );
+  }
+
+  TrayPanelTheme _buildPanelTheme(ProviderReader read) {
+    final brightness = read(currentBrightnessProvider);
+    final isDark = brightness == Brightness.dark;
+    final pureBlack = isDark && read(themeSettingProvider).pureBlack;
+    final colorScheme = read(genColorSchemeProvider(brightness));
+    final glassTint = pureBlack
+        ? Colors.black.withValues(alpha: 0.86)
+        : isDark
+        ? colorScheme.surfaceContainer.shiftTone(7.0).withValues(alpha: 0.62)
+        : colorScheme.surfaceBright.withValues(alpha: 0.55);
+    return TrayPanelTheme(
+      isDark: isDark,
+      pureBlack: pureBlack,
+      glassTint: glassTint.toARGB32(),
+      cardBg: SurfaceLevel.card.colorOf(colorScheme).toARGB32(),
+      blockBg: SurfaceLevel.block.colorOf(colorScheme).toARGB32(),
+      insetBg: SurfaceLevel.inset.colorOf(colorScheme).toARGB32(),
+      hairline: colorScheme.onSurface.withValues(alpha: 0.14).toARGB32(),
+      primary: colorScheme.primary.toARGB32(),
+      onPrimary: colorScheme.onPrimary.toARGB32(),
+      onSurface: colorScheme.onSurface.toARGB32(),
+      onSurfaceVariant: colorScheme.onSurfaceVariant.toARGB32(),
+      success: colorScheme.success.toARGB32(),
+      warning: colorScheme.warning.toARGB32(),
+      error: colorScheme.error.toARGB32(),
+      onError: colorScheme.onError.toARGB32(),
+    );
+  }
+
+  List<TrayPanelGroup> _buildPanelGroups({
+    required TrayState trayState,
+    required ProviderReader read,
+  }) {
+    if (trayState.groups.isEmpty) {
+      return const [];
+    }
+    final delays = read(trayDelaysProvider);
+    final pendingTests = read(pendingDelayTestsProvider);
+    final testingGroups = read(delayTestingGroupsProvider);
+    final allGroups = read(groupsProvider);
+    final defaultTestUrl = read(patchClashConfigProvider).testUrl;
+    return [
+      for (final group in trayState.groups)
+        _buildPanelGroup(
+          group,
+          selectedName: read(selectedProxyNameProvider(group.name)) ?? '',
+          groupDelays: delays[group.name] ?? const {},
+          groupTestUrl: group.testUrl.takeFirstValid([defaultTestUrl]),
+          allGroups: allGroups,
+          selectedMap: trayState.selectedMap,
+          pendingTests: pendingTests,
+          isGroupTesting: testingGroups.contains(group.name),
+        ),
+    ];
+  }
+
+  TrayPanelGroup _buildPanelGroup(
+    Group group, {
+    required String selectedName,
+    required Map<String, int> groupDelays,
+    required String groupTestUrl,
+    required List<Group> allGroups,
+    required Map<String, String> selectedMap,
+    required Map<String, DelayTestPhase> pendingTests,
+    required bool isGroupTesting,
+  }) {
+    var anyProxyTesting = false;
+    final proxies = <TrayPanelProxy>[];
+    for (final proxy in group.all) {
+      final realState = computeRealSelectedProxyState(
+        proxy.name,
+        groups: allGroups,
+        selectedMap: selectedMap,
+      );
+      final effectiveTestUrl = realState.testUrl.takeFirstValid([groupTestUrl]);
+      final testing = pendingTests.containsKey(
+        delayTestKey(effectiveTestUrl, realState.proxyName),
+      );
+      if (testing) {
+        anyProxyTesting = true;
+      }
+      proxies.add(
+        TrayPanelProxy(
+          name: proxy.name,
+          type: proxy.type,
+          delay: groupDelays[proxy.name],
+          testing: testing,
+          selected: selectedName == proxy.name,
+        ),
+      );
+    }
+    return TrayPanelGroup(
+      name: group.name,
+      type: group.type.name,
+      selectedProxyName: selectedName,
+      selectedDelay: groupDelays[selectedName],
+      testing: anyProxyTesting || isGroupTesting,
+      proxies: proxies,
+    );
+  }
+
+  void handlePanelAction(
+    TrayPanelAction event, {
+    required ProviderReader read,
+  }) {
+    if (_isShutDown) {
+      return;
+    }
+    switch (event.action) {
+      case TrayPanelActionNames.showWindow:
+        unawaited(Tray.instance.closePanel());
+        unawaited(window?.show());
+      case TrayPanelActionNames.toggleRunning:
+        read(commonActionProvider.notifier).toggleRunning();
+      case TrayPanelActionNames.setMode:
+        final modeName = event.payload['mode'];
+        if (modeName is! String) {
+          return;
+        }
+        final mode = Mode.values
+            .where((item) => item.name == modeName)
+            .firstOrNull;
+        if (mode != null) {
+          read(setupActionProvider.notifier).changeMode(mode);
+        }
+      case TrayPanelActionNames.toggleTun:
+        read(systemActionProvider.notifier).updateTun();
+      case TrayPanelActionNames.toggleSystemProxy:
+        read(systemActionProvider.notifier).updateSystemProxy();
+      case TrayPanelActionNames.toggleSpeedStatistics:
+        read(commonActionProvider.notifier).updateSpeedStatistics();
+      case TrayPanelActionNames.toggleMonochromeIcon:
+        read(commonActionProvider.notifier).updateMonochromeTrayIcon();
+      case TrayPanelActionNames.toggleAutoLaunch:
+        read(systemActionProvider.notifier).updateAutoLaunch();
+      case TrayPanelActionNames.selectProxy:
+        final groupName = event.payload['groupName'];
+        final proxyName = event.payload['proxyName'];
+        if (groupName is! String || proxyName is! String) {
+          return;
+        }
+        unawaited(
+          read(
+            proxiesActionProvider.notifier,
+          ).changeProxy(groupName: groupName, proxyName: proxyName),
+        );
+      case TrayPanelActionNames.testGroupDelay:
+        final groupName = event.payload['groupName'];
+        if (groupName is! String) {
+          return;
+        }
+        final group = read(trayStateProvider).groups.getGroup(groupName);
+        if (group == null) {
+          return;
+        }
+        unawaited(
+          read(
+            proxiesActionProvider.notifier,
+          ).delayTest(group.all, group.testUrl),
+        );
+      case TrayPanelActionNames.testAllDelays:
+        final groups = read(trayStateProvider).groups;
+        if (groups.isEmpty) {
+          return;
+        }
+        unawaited(_runTestAllDelays(groups, read));
+      case TrayPanelActionNames.copyEnv:
+        unawaited(read(systemActionProvider.notifier).copyProxyEnv());
+      case TrayPanelActionNames.quit:
+        unawaited(Tray.instance.closePanel());
+        unawaited(read(systemActionProvider.notifier).handleExit());
+    }
+  }
+
+  Future<void> _runTestAllDelays(
+    List<Group> groups,
+    ProviderReader read,
+  ) async {
+    _testingAllInFlight++;
+    await updatePanel(trayState: read(trayStateProvider), read: read);
+    try {
+      await read(proxiesActionProvider.notifier).delayTestGroups(groups);
+    } finally {
+      _testingAllInFlight = math.max(0, _testingAllInFlight - 1);
+      if (!_isShutDown) {
+        await updatePanel(trayState: read(trayStateProvider), read: read);
+      }
+    }
   }
 
   List<TrayMenuItem> _buildMenu({

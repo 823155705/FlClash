@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'tray_menu.dart';
+import 'tray_panel.dart';
 import 'tray_spec.dart';
 
 final class EncodedTray {
@@ -19,8 +20,20 @@ final class EncodedTray {
   final String signature;
 }
 
+final class EncodedPanelState {
+  const EncodedPanelState({required this.payload, required this.signature});
+
+  final Map<String, Object?> payload;
+  final String signature;
+}
+
 abstract final class TrayCodec {
   static const int firstItemId = 1024;
+
+  static EncodedPanelState encodePanelState(TrayPanelState state) {
+    final payload = state.toMap();
+    return EncodedPanelState(payload: payload, signature: jsonEncode(payload));
+  }
 
   static EncodedTray encode(TraySpec spec) {
     final itemsById = <int, TrayMenuItem>{};

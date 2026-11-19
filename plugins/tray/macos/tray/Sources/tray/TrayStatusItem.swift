@@ -24,6 +24,10 @@ final class TrayStatusItem {
         ])
     }
 
+    var anchorButton: NSStatusBarButton? {
+        statusItem.button
+    }
+
     func setImage(_ image: NSImage, position: String) {
         if contentView.setImage(image, position: position) {
             statusItem.button?.sizeToFit()
@@ -34,6 +38,10 @@ final class TrayStatusItem {
         if contentView.setTitle(title) {
             statusItem.button?.sizeToFit()
         }
+    }
+
+    func setHighlighted(_ highlighted: Bool) {
+        statusItem.button?.highlight(highlighted)
     }
 
     func openMenu(_ menu: NSMenu) {

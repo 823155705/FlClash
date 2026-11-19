@@ -157,6 +157,19 @@ List<_TrafficBar> _trafficBars(
   return bars;
 }
 
+const _trafficLightPalette = [
+  Color(0xFF3B82F6),
+  Color(0xFF14B8A6),
+  Color(0xFFFB923C),
+];
+const _trafficDarkPalette = [
+  Color(0xFF60A5FA),
+  Color(0xFF2DD4BF),
+  Color(0xFFFDBA74),
+];
+const _trafficLightOther = Color(0xFFCBD5E1);
+const _trafficDarkOther = Color(0xFF475569);
+
 Map<String?, Color> _trafficSwatches(
   BuildContext context,
   List<AppTrafficBucket> timeline,
@@ -191,32 +204,20 @@ Map<String?, Color> _trafficSwatches(
       if (byLabel != 0) return byLabel;
       return a.compareTo(b);
     });
-  final palette = primaryHct.chroma < 8
+  final monochrome = primaryHct.chroma < 8;
+  final palette = monochrome
       ? [
           colors.primary,
           Color(Hct.from(0, 0, dark ? 64 : 44).toInt()),
           Color(Hct.from(0, 0, dark ? 48 : 62).toInt()),
         ]
-      : [
-          colors.primary,
-          Color(
-            Hct.from(
-              (primaryHct.hue + 145) % 360,
-              math.max(38.0, math.min(primaryHct.chroma, 54.0)),
-              dark ? 72.0 : 46.0,
-            ).toInt(),
-          ),
-          Color(
-            Hct.from(
-              (primaryHct.hue + 250) % 360,
-              math.max(36.0, math.min(primaryHct.chroma, 52.0)),
-              dark ? 74.0 : 48.0,
-            ).toInt(),
-          ),
-        ];
+      : (dark ? _trafficDarkPalette : _trafficLightPalette);
+  final other = monochrome
+      ? Color(Hct.from(primaryHct.hue, 4, dark ? 34 : 76).toInt())
+      : (dark ? _trafficDarkOther : _trafficLightOther);
   return {
     for (final (index, id) in ids.take(3).indexed) id: palette[index],
-    null: Color(Hct.from(primaryHct.hue, 4, dark ? 34 : 76).toInt()),
+    null: other,
   };
 }
 

@@ -1079,7 +1079,7 @@
   "fallbackFilterDomainDesc": "这些域名直接使用 Fallback 解析。",
   "appTraffic": "应用流量",
   "appTrafficDesc": "查看各应用消耗的订阅代理流量",
-  "appTrafficScope": "仅统计实际经订阅代理转发的流量，DIRECT 直连不计入。数据每秒更新，重启后保留。",
+  "appTrafficScope": "仅统计实际经订阅代理转发的流量，DIRECT 直连不计入。数据每 10 秒更新，重启后保留。",
   "appTrafficUnbucketed": "未按小时记录的流量",
   "today": "今天",
   "lastSevenDays": "近 7 天",

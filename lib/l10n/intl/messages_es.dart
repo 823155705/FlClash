@@ -391,7 +391,7 @@ class MessageLookup extends MessageLookupByLibrary {
       "Tráfico del proxy por aplicación",
     ),
     "appTrafficScope": MessageLookupByLibrary.simpleMessage(
-      "Solo se cuenta el tráfico enviado mediante un proxy. Las conexiones DIRECT se excluyen. Los datos se actualizan cada segundo y se conservan tras reiniciar.",
+      "Solo se cuenta el tráfico enviado mediante un proxy. Las conexiones DIRECT se excluyen. Los datos se actualizan cada 10 segundos y se conservan tras reiniciar.",
     ),
     "appTrafficUnbucketed": MessageLookupByLibrary.simpleMessage(
       "Tráfico sin desglose por horas",
@@ -1150,9 +1150,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "installCertificateSuccess": MessageLookupByLibrary.simpleMessage(
       "Certificado instalado",
     ),
-    "installedAppsPermissionDeniedMessage": MessageLookupByLibrary.simpleMessage(
-      "Se denegó el permiso de lista de apps, por lo que no se pueden mostrar las apps instaladas. Concédelo manualmente en los ajustes del sistema.",
-    ),
+    "installedAppsPermissionDeniedMessage":
+        MessageLookupByLibrary.simpleMessage(
+          "Se denegó el permiso de lista de apps, por lo que no se pueden mostrar las apps instaladas. Concédelo manualmente en los ajustes del sistema.",
+        ),
     "installedAppsPermissionDesc": MessageLookupByLibrary.simpleMessage(
       "Este sistema oculta la lista de apps instaladas hasta que se concede el permiso. Autorízalo para configurar el proxy por app.",
     ),

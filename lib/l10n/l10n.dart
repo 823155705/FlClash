@@ -7663,8 +7663,7 @@ class AppLocalizations {
   String customImportDroppedSubRules(num count, Object label) {
     return Intl.plural(
       count,
-      one:
-          '1 SUB-RULE rule was dropped, since custom profiles do not support sub-rules',
+      one: '1 SUB-RULE rule was dropped, since custom profiles do not support sub-rules',
       other:
           '$label SUB-RULE rules were dropped, since custom profiles do not support sub-rules',
       name: 'customImportDroppedSubRules',
@@ -9088,10 +9087,10 @@ class AppLocalizations {
     );
   }
 
-  /// `Only traffic sent through subscription proxies is counted. DIRECT connections are excluded. Data updates every second and is retained after restart.`
+  /// `Only traffic sent through subscription proxies is counted. DIRECT connections are excluded. Data updates every 10 seconds and is retained after restart.`
   String get appTrafficScope {
     return Intl.message(
-      'Only traffic sent through subscription proxies is counted. DIRECT connections are excluded. Data updates every second and is retained after restart.',
+      'Only traffic sent through subscription proxies is counted. DIRECT connections are excluded. Data updates every 10 seconds and is retained after restart.',
       name: 'appTrafficScope',
       desc: '',
       args: [],

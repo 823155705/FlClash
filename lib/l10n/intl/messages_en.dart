@@ -368,7 +368,7 @@ class MessageLookup extends MessageLookupByLibrary {
       "View subscription proxy traffic by application",
     ),
     "appTrafficScope": MessageLookupByLibrary.simpleMessage(
-      "Only traffic sent through subscription proxies is counted. DIRECT connections are excluded. Data updates every second and is retained after restart.",
+      "Only traffic sent through subscription proxies is counted. DIRECT connections are excluded. Data updates every 10 seconds and is retained after restart.",
     ),
     "appTrafficUnbucketed": MessageLookupByLibrary.simpleMessage(
       "Traffic without an hourly breakdown",
@@ -1071,9 +1071,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "installCertificateSuccess": MessageLookupByLibrary.simpleMessage(
       "Certificate installed",
     ),
-    "installedAppsPermissionDeniedMessage": MessageLookupByLibrary.simpleMessage(
-      "The app list permission was denied, so installed apps cannot be listed. Please grant it manually in system settings.",
-    ),
+    "installedAppsPermissionDeniedMessage":
+        MessageLookupByLibrary.simpleMessage(
+          "The app list permission was denied, so installed apps cannot be listed. Please grant it manually in system settings.",
+        ),
     "installedAppsPermissionDesc": MessageLookupByLibrary.simpleMessage(
       "This system hides the installed app list until the permission is granted. Authorize it to configure the per-app proxy.",
     ),

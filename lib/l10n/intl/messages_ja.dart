@@ -321,7 +321,7 @@ class MessageLookup extends MessageLookupByLibrary {
       "アプリ別のサブスクリプションプロキシ通信量を表示",
     ),
     "appTrafficScope": MessageLookupByLibrary.simpleMessage(
-      "サブスクリプションプロキシを経由した通信量のみを集計します。DIRECT 接続は除外されます。データは毎秒更新され、再起動後も保持されます。",
+      "サブスクリプションプロキシを経由した通信量のみを集計します。DIRECT 接続は除外されます。データは 10 秒ごとに更新され、再起動後も保持されます。",
     ),
     "appTrafficUnbucketed": MessageLookupByLibrary.simpleMessage(
       "時間別の内訳がない通信量",

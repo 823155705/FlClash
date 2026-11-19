@@ -311,7 +311,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "appTraffic": MessageLookupByLibrary.simpleMessage("应用流量"),
     "appTrafficDesc": MessageLookupByLibrary.simpleMessage("查看各应用消耗的订阅代理流量"),
     "appTrafficScope": MessageLookupByLibrary.simpleMessage(
-      "仅统计实际经订阅代理转发的流量，DIRECT 直连不计入。数据每秒更新，重启后保留。",
+      "仅统计实际经订阅代理转发的流量，DIRECT 直连不计入。数据每 10 秒更新，重启后保留。",
     ),
     "appTrafficUnbucketed": MessageLookupByLibrary.simpleMessage("未按小时记录的流量"),
     "appendSystemDns": MessageLookupByLibrary.simpleMessage("追加系统DNS"),

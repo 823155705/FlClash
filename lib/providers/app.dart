@@ -9,6 +9,7 @@ import 'package:fl_clash/models/models.dart';
 import 'package:fl_clash/plugins/app.dart';
 import 'package:fl_clash/providers/core.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'generated/app.g.dart';
@@ -245,6 +246,19 @@ class AppVisible extends _$AppVisible with AutoDisposeNotifierMixin {
     return true;
   }
 }
+
+class TrayPanelVisible extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void setVisible(bool visible) {
+    state = visible;
+  }
+}
+
+final trayPanelVisibleProvider = NotifierProvider<TrayPanelVisible, bool>(
+  TrayPanelVisible.new,
+);
 
 @Riverpod(keepAlive: true)
 class ViewSize extends _$ViewSize with AutoDisposeNotifierMixin {

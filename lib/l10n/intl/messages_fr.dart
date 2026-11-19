@@ -393,7 +393,7 @@ class MessageLookup extends MessageLookupByLibrary {
       "Trafic du proxy par application",
     ),
     "appTrafficScope": MessageLookupByLibrary.simpleMessage(
-      "Seul le trafic réellement envoyé par un proxy est compté. Les connexions DIRECT sont exclues. Les données sont actualisées chaque seconde et conservées après redémarrage.",
+      "Seul le trafic réellement envoyé par un proxy est compté. Les connexions DIRECT sont exclues. Les données sont actualisées toutes les 10 secondes et conservées après redémarrage.",
     ),
     "appTrafficUnbucketed": MessageLookupByLibrary.simpleMessage(
       "Trafic sans détail horaire",
@@ -1152,9 +1152,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "installCertificateSuccess": MessageLookupByLibrary.simpleMessage(
       "Certificat installé",
     ),
-    "installedAppsPermissionDeniedMessage": MessageLookupByLibrary.simpleMessage(
-      "L’autorisation de la liste des apps a été refusée ; les apps installées ne peuvent donc pas être listées. Veuillez l’accorder manuellement dans les réglages du système.",
-    ),
+    "installedAppsPermissionDeniedMessage":
+        MessageLookupByLibrary.simpleMessage(
+          "L’autorisation de la liste des apps a été refusée ; les apps installées ne peuvent donc pas être listées. Veuillez l’accorder manuellement dans les réglages du système.",
+        ),
     "installedAppsPermissionDesc": MessageLookupByLibrary.simpleMessage(
       "Ce système masque la liste des apps installées tant que l’autorisation n’est pas accordée. Accordez-la pour configurer le proxy par app.",
     ),

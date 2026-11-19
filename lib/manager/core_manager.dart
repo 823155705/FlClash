@@ -39,6 +39,9 @@ class _CoreContainerState extends ConsumerState<CoreManager>
       );
     },
   );
+  static const _trafficFlushInterval = Duration(seconds: 10);
+  static const _trafficSnapshotIntervalTicks = 2;
+
   Timer? _trafficTimer;
   bool _trafficCaptureRunning = false;
   int _trafficEpoch = 0;
@@ -141,7 +144,7 @@ class _CoreContainerState extends ConsumerState<CoreManager>
         _trafficTracker.hasPending;
     if (shouldRun) {
       _trafficTimer ??= Timer.periodic(
-        const Duration(seconds: 1),
+        _trafficFlushInterval,
         (_) => unawaited(_captureAppTraffic()),
       );
       return;
@@ -191,7 +194,7 @@ class _CoreContainerState extends ConsumerState<CoreManager>
       if (ref.read(coreStatusProvider) == CoreStatus.connected &&
           _ticksUntilSnapshot-- <= 0) {
         // Bulk events can be dropped when their queue fills.
-        _ticksUntilSnapshot = 14;
+        _ticksUntilSnapshot = _trafficSnapshotIntervalTicks;
         final epoch = _trafficEpoch;
         final snapshotToken = _trafficTracker.beginSnapshot();
         final connections = await _core.getConnections();

@@ -5,6 +5,20 @@ public class TrayPlugin: NSObject, FlutterPlugin {
     private var channel: FlutterMethodChannel!
     private var statusItem: TrayStatusItem?
     private var menu: TrayMenu?
+    private lazy var panelController = TrayPanelController(
+        onVisibilityChanged: { [weak self] visible in
+            self?.channel.invokeMethod("onPanelVisibilityChanged", arguments: ["visible": visible])
+        },
+        onAction: { [weak self] action, payload in
+            self?.channel.invokeMethod(
+                "onPanelAction",
+                arguments: [
+                    "action": action,
+                    "payload": payload,
+                ]
+            )
+        }
+    )
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "tray", binaryMessenger: registrar.messenger)
@@ -24,6 +38,17 @@ public class TrayPlugin: NSObject, FlutterPlugin {
             result(true)
         case "openMenu":
             result(openMenu())
+        case "setPanelState":
+            result(setPanelState(call.arguments as? [String: Any]))
+        case "setPanelTraffic":
+            result(setPanelTraffic(call.arguments as? [String: Any]))
+        case "openPanel":
+            result(panelController.open())
+        case "closePanel":
+            panelController.close()
+            result(true)
+        case "togglePanel":
+            result(panelController.toggle())
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -37,6 +62,7 @@ public class TrayPlugin: NSObject, FlutterPlugin {
         guard let item = statusItem ?? makeStatusItem() else {
             return false
         }
+        panelController.attach(statusItem: item)
 
         if let icon = arguments["icon"] as? [String: Any] {
             guard let image = makeImage(icon) else {
@@ -70,7 +96,24 @@ public class TrayPlugin: NSObject, FlutterPlugin {
         return true
     }
 
+    private func setPanelState(_ arguments: [String: Any]?) -> Bool {
+        guard let arguments = arguments else {
+            return false
+        }
+        panelController.updateState(arguments)
+        return true
+    }
+
+    private func setPanelTraffic(_ arguments: [String: Any]?) -> Bool {
+        guard let arguments = arguments else {
+            return false
+        }
+        panelController.updateTraffic(arguments)
+        return true
+    }
+
     private func hide() {
+        panelController.dispose()
         statusItem?.remove()
         statusItem = nil
         menu = nil
@@ -91,6 +134,7 @@ public class TrayPlugin: NSObject, FlutterPlugin {
             return nil
         }
         statusItem = item
+        panelController.attach(statusItem: item)
         return item
     }
 

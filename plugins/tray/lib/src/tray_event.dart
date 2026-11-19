@@ -17,3 +17,19 @@ final class TrayMenuItemSelected extends TrayEvent {
 
   final TrayMenuItem item;
 }
+
+final class TrayPanelVisibilityChanged extends TrayEvent {
+  const TrayPanelVisibilityChanged(this.visible);
+
+  final bool visible;
+}
+
+final class TrayPanelAction extends TrayEvent {
+  const TrayPanelAction(
+    this.action, [
+    this.payload = const <String, Object?>{},
+  ]);
+
+  final String action;
+  final Map<String, Object?> payload;
+}

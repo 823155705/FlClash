@@ -10,16 +10,24 @@ import 'tray_capabilities.dart';
 import 'tray_codec.dart';
 import 'tray_event.dart';
 import 'tray_menu.dart';
+import 'tray_panel.dart';
 import 'tray_spec.dart';
 
 const String _methodShow = 'show';
 const String _methodHide = 'hide';
 const String _methodSetTitle = 'setTitle';
 const String _methodOpenMenu = 'openMenu';
+const String _methodSetPanelState = 'setPanelState';
+const String _methodSetPanelTraffic = 'setPanelTraffic';
+const String _methodOpenPanel = 'openPanel';
+const String _methodClosePanel = 'closePanel';
+const String _methodTogglePanel = 'togglePanel';
 
 const String _eventIconActivated = 'onIconActivated';
 const String _eventMenuRequested = 'onMenuRequested';
 const String _eventMenuItemSelected = 'onMenuItemSelected';
+const String _eventPanelVisibilityChanged = 'onPanelVisibilityChanged';
+const String _eventPanelAction = 'onPanelAction';
 
 final class Tray {
   Tray._() {
@@ -36,6 +44,9 @@ final class Tray {
   Map<int, TrayMenuItem> _itemsById = const {};
   Future<void> _queue = Future<void>.value();
   String? _signature;
+  String? _panelSignature;
+  TrayPanelTraffic? _panelTraffic;
+  TrayPanelTraffic? _requestedPanelTraffic;
   String _title = '';
   String _requestedTitle = '';
   bool _isVisible = false;
@@ -56,6 +67,15 @@ final class Tray {
     return _serialize(() => _setTitle(_requestedTitle));
   }
 
+  Future<void> setPanelState(TrayPanelState state) {
+    return _serialize(() => _setPanelState(state));
+  }
+
+  Future<void> setPanelTraffic(TrayPanelTraffic traffic) {
+    _requestedPanelTraffic = traffic;
+    return _serialize(() => _setPanelTraffic(_requestedPanelTraffic));
+  }
+
   Future<void> hide() {
     return _serialize(_hide);
   }
@@ -64,11 +84,26 @@ final class Tray {
     return _serialize(_openMenu);
   }
 
+  Future<void> openPanel() {
+    return _serialize(_openPanel);
+  }
+
+  Future<void> closePanel() {
+    return _serialize(_closePanel);
+  }
+
+  Future<void> togglePanel() {
+    return _serialize(_togglePanel);
+  }
+
   @visibleForTesting
   void resetForTesting() {
     _itemsById = const {};
     _queue = Future<void>.value();
     _signature = null;
+    _panelSignature = null;
+    _panelTraffic = null;
+    _requestedPanelTraffic = null;
     _title = '';
     _requestedTitle = '';
     _isVisible = false;
@@ -126,9 +161,42 @@ final class Tray {
     });
   }
 
+  Future<void> _setPanelState(TrayPanelState state) async {
+    if (!capabilities.panel) {
+      return;
+    }
+    final encoded = TrayCodec.encodePanelState(state);
+    if (encoded.signature == _panelSignature) {
+      return;
+    }
+    final isApplied = await _channel.invokeMethod<bool>(
+      _methodSetPanelState,
+      encoded.payload,
+    );
+    if (isApplied == false) {
+      _panelSignature = null;
+      return;
+    }
+    _panelSignature = encoded.signature;
+  }
+
+  Future<void> _setPanelTraffic(TrayPanelTraffic? traffic) async {
+    if (!capabilities.panel || !_isVisible || traffic == null) {
+      return;
+    }
+    if (_panelTraffic == traffic) {
+      return;
+    }
+    _panelTraffic = traffic;
+    await _channel.invokeMethod(_methodSetPanelTraffic, traffic.toMap());
+  }
+
   Future<void> _hide() async {
     _itemsById = const {};
     _signature = null;
+    _panelSignature = null;
+    _panelTraffic = null;
+    _requestedPanelTraffic = null;
     _title = '';
     if (!_isVisible) {
       return;
@@ -142,6 +210,27 @@ final class Tray {
       return;
     }
     await _channel.invokeMethod(_methodOpenMenu);
+  }
+
+  Future<void> _openPanel() async {
+    if (!capabilities.panel || !_isVisible) {
+      return;
+    }
+    await _channel.invokeMethod(_methodOpenPanel);
+  }
+
+  Future<void> _closePanel() async {
+    if (!capabilities.panel) {
+      return;
+    }
+    await _channel.invokeMethod(_methodClosePanel);
+  }
+
+  Future<void> _togglePanel() async {
+    if (!capabilities.panel || !_isVisible) {
+      return;
+    }
+    await _channel.invokeMethod(_methodTogglePanel);
   }
 
   Future<void> _onPlatformCall(MethodCall call) async {
@@ -170,6 +259,33 @@ final class Tray {
             return;
         }
         _events.add(TrayMenuItemSelected(item));
+      case _eventPanelVisibilityChanged:
+        final arguments = call.arguments;
+        if (arguments is! Map) {
+          return;
+        }
+        final visible = arguments['visible'];
+        if (visible is! bool) {
+          return;
+        }
+        _events.add(TrayPanelVisibilityChanged(visible));
+      case _eventPanelAction:
+        final arguments = call.arguments;
+        if (arguments is! Map) {
+          return;
+        }
+        final action = arguments['action'];
+        if (action is! String || action.isEmpty) {
+          return;
+        }
+        final rawPayload = arguments['payload'];
+        final payload = rawPayload is Map
+            ? <String, Object?>{
+                for (final entry in rawPayload.entries)
+                  if (entry.key is String) entry.key as String: entry.value,
+              }
+            : const <String, Object?>{};
+        _events.add(TrayPanelAction(action, payload));
     }
   }
 

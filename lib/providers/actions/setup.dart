@@ -51,6 +51,7 @@ class SetupAction extends _$SetupAction {
   void build() {
     ref.onDispose(_stopRuntimeTicker);
     ref.listen(appVisibleProvider, (_, _) => _syncRuntimeTicker());
+    ref.listen(trayPanelVisibleProvider, (_, _) => _syncRuntimeTicker());
     ref.listen(
       appSettingProvider.select((state) => state.showTrayTitle),
       (_, _) => _syncRuntimeTicker(),
@@ -59,6 +60,7 @@ class SetupAction extends _$SetupAction {
 
   bool get _isTrafficShown =>
       ref.read(appVisibleProvider) ||
+      ref.read(trayPanelVisibleProvider) ||
       (system.isMacOS &&
           !ref.read(safeModeProvider) &&
           ref.read(appSettingProvider).showTrayTitle);

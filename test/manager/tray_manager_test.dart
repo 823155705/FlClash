@@ -1,10 +1,15 @@
 import 'dart:async';
 
+import 'package:fl_clash/common/constant.dart';
+import 'package:fl_clash/common/tray.dart';
+import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/l10n/l10n.dart';
 import 'package:fl_clash/manager/locale_manager.dart';
 import 'package:fl_clash/manager/tray_manager.dart';
+import 'package:fl_clash/models/models.dart';
 import 'package:fl_clash/providers/providers.dart';
 import 'package:fl_clash/state.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -55,6 +60,7 @@ void main() {
 
   late ProviderContainer container;
   late List<String> windowCalls;
+  late List<MethodCall> trayCalls;
 
   setUpAll(() async {
     await AppLocalizations.load(const Locale('en'));
@@ -64,9 +70,13 @@ void main() {
     _RecordingSystemAction.updateTrayCount = 0;
     _RecordingSystemAction.updateTrayLocales.clear();
     windowCalls = <String>[];
+    trayCalls = <MethodCall>[];
     Tray.instance.resetForTesting();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(_trayChannel, (call) async => true);
+        .setMockMethodCallHandler(_trayChannel, (call) async {
+          trayCalls.add(call);
+          return true;
+        });
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_windowChannel, (call) async {
           windowCalls.add(call.method);
@@ -93,6 +103,7 @@ void main() {
   Future<void> pumpTrayManager(
     WidgetTester tester, {
     SystemAction Function()? systemAction,
+    AppTray? tray,
   }) async {
     container = ProviderContainer(
       overrides: [
@@ -106,7 +117,9 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const HostApp(home: TrayManager(child: SizedBox.shrink())),
+        child: HostApp(
+          home: TrayManager(tray: tray, child: const SizedBox.shrink()),
+        ),
       ),
     );
     await tester.pump();
@@ -271,5 +284,174 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(windowCalls, isEmpty);
+  });
+
+  group('tray panel integration', () {
+    late AppTray macTray;
+
+    setUp(() {
+      macTray = AppTray.forPlatform(isMacOS: true, isWindows: false);
+    });
+
+    Future<void> runMacOS(Future<void> Function() body) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      try {
+        await body();
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    }
+
+    Future<void> showTrayIcon(WidgetTester tester) async {
+      await tester.runAsync(() async {
+        await Tray.instance.show(
+          const TraySpec(
+            icon: TrayIcon.asset('assets/images/tray/macos/status_1.png'),
+          ),
+        );
+      });
+      expect(Tray.instance.isVisible, isTrue);
+      trayCalls.clear();
+    }
+
+    Future<void> flushTray(WidgetTester tester) async {
+      await tester.pump();
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'menu request toggles panel on macOS and icon click closes open panel',
+      (tester) async {
+        await runMacOS(() async {
+          await pumpTrayManager(tester, tray: macTray);
+          await showTrayIcon(tester);
+
+          await emitTrayEvent('onMenuRequested');
+          await flushTray(tester);
+          expect(trayCalls.map((c) => c.method), ['togglePanel']);
+
+          trayCalls.clear();
+          await emitTrayEvent('onPanelVisibilityChanged', {'visible': true});
+          await flushTray(tester);
+
+          trayCalls.clear();
+          windowCalls.clear();
+          await emitTrayEvent('onIconActivated');
+          await flushTray(tester);
+          await tester.pump(const Duration(seconds: 1));
+
+          expect(trayCalls.map((c) => c.method), contains('closePanel'));
+          expect(windowCalls, containsAll(<String>['show', 'focus']));
+        });
+      },
+    );
+
+    testWidgets('streams panel traffic, delays and theme only while visible', (
+      tester,
+    ) async {
+      await runMacOS(() async {
+        await pumpTrayManager(tester, tray: macTray);
+        container
+            .read(appSettingProvider.notifier)
+            .update((state) => state.copyWith(showTrayTitle: false));
+        await showTrayIcon(tester);
+
+        // Hidden: changes do not push panel traffic or panel state.
+        container
+            .read(trafficsProvider.notifier)
+            .addTraffic(const Traffic(up: 100, down: 200));
+        container.read(delayDataSourceProvider.notifier).setDelays([
+          const Delay(url: defaultTestUrl, name: 'A', value: 42),
+        ]);
+        container
+            .read(themeSettingProvider.notifier)
+            .update((state) => state.copyWith(pureBlack: true));
+        await tester.pump(const Duration(milliseconds: 80));
+        await flushTray(tester);
+
+        expect(trayCalls, isEmpty);
+        expect(container.read(trayPanelVisibleProvider), isFalse);
+
+        // Visible: immediately syncs state + traffic and attaches live streams.
+        await emitTrayEvent('onPanelVisibilityChanged', {'visible': true});
+        await flushTray(tester);
+
+        expect(container.read(trayPanelVisibleProvider), isTrue);
+        expect(
+          trayCalls.map((c) => c.method),
+          containsAll(['setPanelState', 'setPanelTraffic']),
+        );
+
+        trayCalls.clear();
+        container
+            .read(trafficsProvider.notifier)
+            .addTraffic(const Traffic(up: 1024, down: 4096));
+        await flushTray(tester);
+        expect(trayCalls.map((c) => c.method), ['setPanelTraffic']);
+
+        // Delay bursts coalesce over 50ms debounce.
+        container.read(groupsProvider.notifier).value = const [
+          Group(
+            name: 'Proxy',
+            type: GroupType.Selector,
+            hidden: false,
+            all: [Proxy(name: 'A', type: 'Direct')],
+          ),
+        ];
+        await flushTray(tester);
+        trayCalls.clear();
+        container.read(delayDataSourceProvider.notifier).setDelays([
+          const Delay(url: defaultTestUrl, name: 'A', value: 55),
+        ]);
+        container.read(delayDataSourceProvider.notifier).setDelays([
+          const Delay(url: defaultTestUrl, name: 'A', value: 88),
+        ]);
+        await tester.pump(const Duration(milliseconds: 20));
+        expect(trayCalls, isEmpty);
+        await tester.pump(const Duration(milliseconds: 40));
+        await flushTray(tester);
+        expect(trayCalls.map((c) => c.method), ['setPanelState']);
+
+        // Theme change pushes immediately while visible.
+        trayCalls.clear();
+        container
+            .read(themeSettingProvider.notifier)
+            .update((state) => state.copyWith(primaryColor: 0xFF34C759));
+        await flushTray(tester);
+        expect(trayCalls.map((c) => c.method), ['setPanelState']);
+
+        // Closing detaches subscriptions.
+        await emitTrayEvent('onPanelVisibilityChanged', {'visible': false});
+        await flushTray(tester);
+        expect(container.read(trayPanelVisibleProvider), isFalse);
+
+        trayCalls.clear();
+        container
+            .read(trafficsProvider.notifier)
+            .addTraffic(const Traffic(up: 2048, down: 8192));
+        container
+            .read(themeSettingProvider.notifier)
+            .update((state) => state.copyWith(pureBlack: true));
+        await tester.pump(const Duration(milliseconds: 80));
+        await flushTray(tester);
+        expect(trayCalls, isEmpty);
+      });
+    });
+
+    testWidgets('forwards panel actions to AppTray', (tester) async {
+      await runMacOS(() async {
+        await pumpTrayManager(tester, tray: macTray);
+        final before = container.read(appSettingProvider).monochromeTrayIcon;
+
+        await emitTrayEvent('onPanelAction', {
+          'action': TrayPanelActionNames.toggleMonochromeIcon,
+          'payload': const <String, Object?>{},
+        });
+        await tester.pumpAndSettle();
+
+        expect(container.read(appSettingProvider).monochromeTrayIcon, !before);
+      });
+    });
   });
 }

@@ -319,7 +319,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "appTraffic": MessageLookupByLibrary.simpleMessage("앱 트래픽"),
     "appTrafficDesc": MessageLookupByLibrary.simpleMessage("앱별 구독 프록시 트래픽 보기"),
     "appTrafficScope": MessageLookupByLibrary.simpleMessage(
-      "프록시를 통해 실제로 전송된 트래픽만 집계합니다. DIRECT 연결은 제외합니다. 매초 갱신되며 재시작 후에도 유지됩니다.",
+      "프록시를 통해 실제로 전송된 트래픽만 집계합니다. DIRECT 연결은 제외합니다. 10초마다 갱신되며 재시작 후에도 유지됩니다.",
     ),
     "appTrafficUnbucketed": MessageLookupByLibrary.simpleMessage(
       "시간별 내역이 없는 트래픽",

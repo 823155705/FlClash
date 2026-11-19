@@ -378,7 +378,7 @@ class MessageLookup extends MessageLookupByLibrary {
       "Трафик прокси-подписок по приложениям",
     ),
     "appTrafficScope": MessageLookupByLibrary.simpleMessage(
-      "Учитывается только трафик через прокси подписок. Прямые соединения DIRECT исключены. Данные обновляются каждую секунду и сохраняются после перезапуска.",
+      "Учитывается только трафик через прокси подписок. Прямые соединения DIRECT исключены. Данные обновляются каждые 10 секунд и сохраняются после перезапуска.",
     ),
     "appTrafficUnbucketed": MessageLookupByLibrary.simpleMessage(
       "Трафик без разбивки по часам",
@@ -1117,9 +1117,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "installCertificateSuccess": MessageLookupByLibrary.simpleMessage(
       "Сертификат установлен",
     ),
-    "installedAppsPermissionDeniedMessage": MessageLookupByLibrary.simpleMessage(
-      "Разрешение на список приложений отклонено, поэтому установленные приложения недоступны. Предоставьте его вручную в системных настройках.",
-    ),
+    "installedAppsPermissionDeniedMessage":
+        MessageLookupByLibrary.simpleMessage(
+          "Разрешение на список приложений отклонено, поэтому установленные приложения недоступны. Предоставьте его вручную в системных настройках.",
+        ),
     "installedAppsPermissionDesc": MessageLookupByLibrary.simpleMessage(
       "Эта система не выдаёт список установленных приложений без разрешения. Предоставьте его, чтобы настроить прокси для отдельных приложений.",
     ),
