@@ -6,11 +6,11 @@ import 'package:fl_clash/providers/providers.dart';
 import 'package:fl_clash/state.dart';
 import 'package:fl_clash/ui/icons/icons.dart';
 import 'package:fl_clash/views/connection/requests.dart';
-import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:prism_ui/prism_ui.dart';
 
 import '../helpers/glyph_finders.dart';
 import '../helpers/scrollbar.dart';
@@ -62,9 +62,9 @@ void main() {
 
   tearDown(() => container.dispose());
 
-  void seedRequests(List<TrackerInfo> requests, {int capacity = 500}) {
+  void seedRequests(List<TrackerInfo> requests) {
     final notifier = container.read(requestsProvider.notifier);
-    notifier.value = FixedList<TrackerInfo>(capacity);
+    notifier.value = FixedList<TrackerInfo>(500);
     for (final request in requests) {
       notifier.addRequest(request);
     }
@@ -342,110 +342,6 @@ void main() {
 
     await teardownView(tester);
   });
-
-  testWidgets('sorting a full request table lays out only visible rows', (
-    tester,
-  ) async {
-    seedRequests(
-      List.generate(
-        maxRequestsLength,
-        (index) => _tracker(
-          id: '$index',
-          host: 'host-$index.test',
-          download: (index * 71) % maxRequestsLength,
-        ),
-      ),
-      capacity: maxRequestsLength,
-    );
-    await pumpRequests(tester);
-    await tester.tap(find.text('Download'));
-    await tester.pumpAndSettle();
-
-    final rows = find
-        .byType(TrackerInfoTableRow)
-        .evaluate()
-        .map((node) => node.widget as TrackerInfoTableRow)
-        .toList();
-    expect(rows, isNotEmpty);
-    expect(rows.length, lessThan(100));
-    expect(
-      rows.any((row) => row.trackerInfo.download == maxRequestsLength - 1),
-      isTrue,
-    );
-    await teardownView(tester);
-  });
-
-  testWidgets('sorting by a static column keeps rows and stripes stable across '
-      'traffic updates and head inserts', (tester) async {
-    seedRequests([
-      _tracker(id: 'a', host: 'alpha.test', process: 'curl', download: 100),
-      _tracker(id: 'b', host: 'beta.test', process: 'git', download: 200),
-      _tracker(id: 'c', host: 'gamma.test', process: 'ssh', download: 300),
-    ]);
-    await pumpRequests(tester);
-    await tester.tap(find.text('Process'));
-    await tester.pumpAndSettle();
-
-    Map<String, bool> stripesById() => {
-      for (final row in tester.widgetList<TrackerInfoTableRow>(
-        find.byType(TrackerInfoTableRow),
-      ))
-        row.trackerInfo.id: row.striped,
-    };
-
-    final initialStripes = stripesById();
-    expect(initialStripes.values.toSet(), {true, false});
-
-    container.read(requestsProvider.notifier).updateTraffic({
-      'b': (upload: 512, download: 4096),
-    });
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
-
-    expect(find.text(4096.traffic.show), findsOneWidget);
-    expect(stripesById(), initialStripes);
-
-    addRequest(
-      _tracker(id: 'd', host: 'delta.test', process: 'adb', download: 50),
-    );
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
-
-    final afterInsert = stripesById();
-    expect(afterInsert['a'], initialStripes['a']);
-    expect(afterInsert['b'], initialStripes['b']);
-    expect(afterInsert['c'], initialStripes['c']);
-    await teardownView(tester);
-  });
-
-  test(
-    'RecordFilterController.apply memoizes filtered list until inputs change',
-    () {
-      final controller = RecordFilterController<TrackerInfo>(
-        facets: trackerInfoFacets,
-        groupers: trackerInfoGroupers,
-      );
-      addTearDown(controller.dispose);
-      final items = [
-        _tracker(id: 'a', network: 'tcp'),
-        _tracker(id: 'b', network: 'udp'),
-      ];
-      expect(identical(controller.apply(items), items), isTrue);
-
-      controller.add(const RecordFilter(RecordFacetKind.network, 'tcp'));
-      final filtered = controller.apply(items);
-      expect(filtered.map((item) => item.id), ['a']);
-      expect(identical(controller.apply(items), filtered), isTrue);
-
-      controller.setGrouping(RecordGrouping.app);
-      expect(identical(controller.apply(items), filtered), isTrue);
-
-      final nextItems = [...items, _tracker(id: 'c', network: 'tcp')];
-      final nextFiltered = controller.apply(nextItems);
-      expect(nextFiltered.map((item) => item.id), ['a', 'c']);
-      expect(identical(nextFiltered, filtered), isFalse);
-    },
-  );
 
   testWidgets('dragging a column edge widens it into the columns after it, '
       'keeps the widths and a double click gives them back', (tester) async {

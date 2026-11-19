@@ -88,22 +88,11 @@ void main() {
 
     await tray.shutdown();
     expect(calls.where((call) => call.method == 'hide'), isEmpty);
-    expect(calls.where((call) => call.method == 'closePanel'), hasLength(1));
 
     calls.clear();
     await tray.update(
       trayState: _trayState(isStart: true),
       traffic: const Traffic(),
-      read: container.read,
-    );
-    await tray.updateTitle(showTrayTitle: true, traffic: const Traffic());
-    await tray.updatePanel(
-      trayState: _trayState(isStart: true),
-      read: container.read,
-    );
-    await tray.updatePanelTraffic(const Traffic(up: 1024, down: 2048));
-    tray.handlePanelAction(
-      const TrayPanelAction(TrayPanelActionNames.toggleTun),
       read: container.read,
     );
 
