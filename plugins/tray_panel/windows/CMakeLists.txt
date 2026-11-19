@@ -1,0 +1,42 @@
+cmake_minimum_required(VERSION 3.14)
+set(PROJECT_NAME "tray_panel")
+project(${PROJECT_NAME} LANGUAGES CXX)
+cmake_policy(VERSION 3.14...3.25)
+
+set(PLUGIN_NAME "tray_panel_plugin")
+
+list(APPEND PLUGIN_SOURCES
+  "tray_panel_model.cpp"
+  "tray_panel_model.h"
+  "tray_panel_window.cpp"
+  "tray_panel_window.h"
+  "tray_panel_plugin.cpp"
+  "tray_panel_plugin.h"
+)
+
+add_library(${PLUGIN_NAME} SHARED
+  "include/tray_panel/tray_panel_plugin_c_api.h"
+  "tray_panel_plugin_c_api.cpp"
+  ${PLUGIN_SOURCES}
+)
+
+apply_standard_settings(${PLUGIN_NAME})
+
+set_target_properties(${PLUGIN_NAME} PROPERTIES
+  CXX_VISIBILITY_PRESET hidden)
+target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL)
+
+target_include_directories(${PLUGIN_NAME} INTERFACE
+  "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(${PLUGIN_NAME} PRIVATE
+  flutter
+  flutter_wrapper_plugin
+  d2d1
+  dwrite
+  dwmapi
+)
+
+set(tray_panel_bundled_libraries
+  ""
+  PARENT_SCOPE
+)

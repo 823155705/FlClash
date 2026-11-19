@@ -13,7 +13,7 @@ Future<void> startMacOSUpdate(String imagePath) async {
     await probe.writeAsString('');
     await probe.delete();
     final installer = File(p.join(directory.path, 'install.sh'));
-    await installer.writeAsString(macOSUpdateInstaller);
+    await installer.writeAsString(_macOSUpdateInstaller);
     await Process.start('/bin/sh', [
       installer.path,
       '$pid',
@@ -27,7 +27,7 @@ Future<void> startMacOSUpdate(String imagePath) async {
   }
 }
 
-const macOSUpdateInstaller = r'''
+const _macOSUpdateInstaller = r'''
 set -eu
 app_pid=$1
 image=$2

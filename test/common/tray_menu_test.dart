@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:fl_clash/common/app_localizations.dart';
@@ -7,7 +6,6 @@ import 'package:fl_clash/common/constant.dart';
 import 'package:fl_clash/common/l10n_labels.dart';
 import 'package:fl_clash/common/tray.dart';
 import 'package:fl_clash/enum/enum.dart';
-import 'package:fl_clash/l10n/l10n.dart';
 import 'package:fl_clash/models/models.dart';
 import 'package:fl_clash/providers/action.dart';
 import 'package:fl_clash/providers/state.dart';
@@ -16,13 +14,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:intl/intl.dart';
 import 'package:riverpod/riverpod.dart';
-import 'package:tray/tray.dart';
+import 'package:rust_api/tray.dart';
+import 'package:tray_panel/tray_panel.dart';
 
 import '../helpers/app_paths.dart';
-
-const _channel = MethodChannel('tray');
+import '../helpers/fake_tray_host.dart';
 
 const _proxyGroup = Group(
   name: 'Proxy',
@@ -70,23 +67,38 @@ TrayState _trayState({
   );
 }
 
-List<Map<Object?, Object?>> _items(MethodCall? call) {
-  final menu = (call?.arguments as Map?)?['menu'] as List?;
-  return menu?.cast<Map<Object?, Object?>>() ?? const [];
+Map<String, Object?> _describe(TrayItem item) {
+  return {
+    'id': item.id,
+    'type': item.kind.name,
+    'label': item.label,
+    if (item.detail != null) 'detail': item.detail,
+    'enabled': item.enabled,
+    'checked': item.checked,
+    'items': item.items.map(_describe).toList(),
+  };
 }
 
-Map<Object?, Object?> _item(MethodCall? call, String label) {
-  return _items(call).firstWhere((item) => item['label'] == label);
+List<Map<String, Object?>> _items(TrayContent? content) {
+  return content?.menu.map(_describe).toList() ?? const [];
 }
 
-List<String> _labels(MethodCall? call) {
-  return _items(call).map((item) => item['label']).whereType<String>().toList();
+Map<String, Object?> _item(TrayContent? content, String label) {
+  return _items(content).firstWhere((item) => item['label'] == label);
+}
+
+List<String> _labels(TrayContent? content) {
+  return _items(
+    content,
+  ).map((item) => item['label']).whereType<String>().toList();
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late List<MethodCall> calls;
+  const panelChannel = MethodChannel('tray_panel');
+  late FakeTrayHost host;
+  late List<MethodCall> panelCalls;
   late ProviderContainer container;
   late AppTray tray;
 
@@ -95,7 +107,7 @@ void main() {
   setUpAll(() async {
     root = Directory.systemTemp.createTempSync('tray_menu_test');
     await useAppPaths(root);
-    await AppLocalizations.load(const Locale('en'));
+    loadAppLocalizations(const Locale('en'));
   });
 
   tearDownAll(() {
@@ -113,28 +125,33 @@ void main() {
 
   setUp(() {
     debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-    calls = [];
+    host = FakeTrayHost();
+    panelCalls = <MethodCall>[];
     tray = AppTray.forPlatform(isMacOS: true, isWindows: false);
     container = ProviderContainer();
-    Tray.instance.resetForTesting();
+    Tray.instance.resetForTesting(host);
+    TrayPanel.instance.resetForTesting();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(_channel, (call) async {
-          calls.add(call);
+        .setMockMethodCallHandler(panelChannel, (call) async {
+          panelCalls.add(call);
           return true;
         });
   });
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(_channel, null);
+        .setMockMethodCallHandler(panelChannel, null);
+    TrayPanel.instance.resetForTesting();
     container.dispose();
     debugDefaultTargetPlatformOverride = null;
   });
 
-  MethodCall? showCall() {
-    for (final call in calls.reversed) {
-      if (call.method == 'show') {
-        return call;
+  TrayContent? showCall() => host.lastShown;
+
+  Map<Object?, Object?>? lastPanelState() {
+    for (final call in panelCalls.reversed) {
+      if (call.method == 'setPanelState') {
+        return call.arguments as Map<Object?, Object?>;
       }
     }
     return null;
@@ -162,82 +179,84 @@ void main() {
     },
   );
 
-  test('builds the stopped menu without the running-only toggles', () async {
-    await update(_trayState());
+  test(
+    'builds the slim panel menu on macOS and pushes stopped state',
+    () async {
+      await update(_trayState());
 
-    final labels = _labels(showCall());
-    final l10n = currentAppLocalizations;
-    expect(labels, contains(l10n.show));
-    expect(labels, contains(l10n.start));
-    expect(labels, contains(l10n.autoLaunch));
-    expect(labels, contains(l10n.copyEnvVar));
-    expect(labels, contains(l10n.exit));
-    expect(labels, isNot(contains(l10n.tun)));
-    expect(labels, isNot(contains(l10n.systemProxy)));
-  });
+      final labels = _labels(showCall());
+      final l10n = currentAppLocalizations;
+      expect(labels, [
+        l10n.show,
+        l10n.start,
+        '',
+        l10n.copyEnvVar,
+        '',
+        l10n.exit,
+      ]);
+      expect(lastPanelState()?['isStart'], isFalse);
+    },
+  );
 
-  test('adds TUN and system proxy toggles once the core is running', () async {
-    await update(_trayState(isStart: true));
+  test('flips start to stop and syncs TUN/proxy flags to the panel', () async {
+    await update(_trayState(isStart: true, tunEnable: true, systemProxy: true));
 
     final labels = _labels(showCall());
     final l10n = currentAppLocalizations;
     expect(labels, contains(l10n.stop), reason: 'start flips to stop');
-    expect(labels, contains(l10n.tun));
-    expect(labels, contains(l10n.systemProxy));
+    final panel = lastPanelState()!;
+    expect(panel['isStart'], isTrue);
+    expect(panel['tunEnable'], isTrue);
+    expect(panel['systemProxy'], isTrue);
   });
 
   group('safe mode', () {
-    test('keeps the full menu', () async {
+    test('keeps the slim menu and marks safeMode in panel state', () async {
       await update(_trayState(isStart: true, safeMode: true));
 
       final labels = _labels(showCall());
       final l10n = currentAppLocalizations;
-      expect(labels, contains(l10n.stop));
-      expect(labels, contains(l10n.tun));
-      expect(labels, contains(l10n.systemProxy));
-      expect(labels, contains(l10n.copyEnvVar));
+      expect(labels, [
+        l10n.show,
+        l10n.stop,
+        '',
+        l10n.copyEnvVar,
+        '',
+        l10n.exit,
+      ]);
+      expect(lastPanelState()?['safeMode'], isTrue);
     });
 
     test('names the mode in the tooltip and ships the safe icon', () async {
       await update(_trayState(isStart: true, safeMode: true));
 
-      final arguments = showCall()!.arguments as Map;
+      final content = showCall()!;
       final l10n = currentAppLocalizations;
-      expect(arguments['toolTip'], '$appName (${l10n.safeMode})');
-      final reps = ((arguments['icon'] as Map)['reps'] as List).cast<Map>();
-      final base = reps.firstWhere((rep) => rep['scale'] == 1.0);
+      expect(content.toolTip, '$appName (${l10n.safeMode})');
       expect(
-        base['bytes'],
-        base64Encode(
-          File('assets/images/tray/macos/status_4.png').readAsBytesSync(),
-        ),
+        content.image.pngs.first,
+        File('assets/images/tray/macos/status_4.png').readAsBytesSync(),
       );
     });
   });
 
-  test('offers every outbound mode as a menu entry', () async {
+  test('sends the active outbound mode to the panel state', () async {
     await update(_trayState(mode: Mode.global));
 
-    final checkedModes = _items(showCall())
-        .where((item) => item['checked'] == true)
-        .map((item) => item['label'])
-        .toList();
-    expect(checkedModes, contains(Intl.message(Mode.global.name)));
+    expect(lastPanelState()?['mode'], Mode.global.name);
   });
 
   test('sends icon, tooltip and menu in a single show call', () async {
     await update(_trayState(isStart: true, tunEnable: true));
 
-    final showCalls = calls.where((call) => call.method == 'show').toList();
-    expect(showCalls, hasLength(1));
+    expect(host.shown, hasLength(1));
 
-    final arguments = showCalls.single.arguments as Map;
-    expect(arguments['toolTip'], appName);
-    expect(arguments['menu'], isNotEmpty);
-    final reps = ((arguments['icon'] as Map)['reps'] as List).cast<Map>();
-    expect(reps.map((rep) => rep['scale']), containsAll([1.0, 2.0, 3.0, 4.0]));
-    expect(reps.map((rep) => rep['bytes']), everyElement(isNotEmpty));
-    expect((arguments['icon'] as Map)['isTemplate'], isTrue);
+    final content = host.shown.single;
+    expect(content.toolTip, appName);
+    expect(content.menu, isNotEmpty);
+    expect(content.image.pngs, hasLength(Tray.variantScales.length));
+    expect(content.image.pngs, everyElement(isNotEmpty));
+    expect(content.image.template, isTrue);
   });
 
   test('ships the color status icon once monochrome is off', () async {
@@ -245,35 +264,28 @@ void main() {
       _trayState(isStart: true, tunEnable: true, monochromeTrayIcon: false),
     );
 
-    final arguments = showCall()!.arguments as Map;
-    expect((arguments['icon'] as Map)['isTemplate'], isFalse);
-    final reps = ((arguments['icon'] as Map)['reps'] as List).cast<Map>();
-    final base = reps.firstWhere((rep) => rep['scale'] == 1.0);
+    final content = showCall()!;
+    expect(content.image.template, isFalse);
     expect(
-      base['bytes'],
-      base64Encode(
-        File('assets/images/tray/unix/status_3.png').readAsBytesSync(),
-      ),
+      content.image.pngs.first,
+      File('assets/images/tray/unix/status_3.png').readAsBytesSync(),
     );
-    expect(
-      _item(showCall(), currentAppLocalizations.monochromeIcon)['checked'],
-      isFalse,
-    );
+    expect(lastPanelState()?['monochromeTrayIcon'], isFalse);
   });
 
   test('skips the platform call when the tray state is unchanged', () async {
     await update(_trayState(isStart: true));
     await update(_trayState(isStart: true));
 
-    expect(calls.where((call) => call.method == 'show'), hasLength(1));
+    expect(host.shown, hasLength(1));
   });
 
   test('menu item ids are stable across identical rebuilds', () async {
     await update(_trayState());
     final first = _items(showCall()).map((item) => item['id']).toList();
 
-    Tray.instance.resetForTesting();
-    calls.clear();
+    host = FakeTrayHost();
+    Tray.instance.resetForTesting(host);
 
     await update(_trayState());
     final second = _items(showCall()).map((item) => item['id']).toList();
@@ -282,28 +294,19 @@ void main() {
     expect(first.first, 1024);
   });
 
-  test('group submenus carry their proxies as nested items', () async {
-    await update(
-      _trayState(
-        groups: [
-          const Group(
-            name: 'Proxy',
-            type: GroupType.Selector,
-            all: [Proxy(name: 'A', type: 'Direct')],
-          ),
-        ],
-      ),
-    );
+  test('panel groups carry their proxies', () async {
+    await update(_trayState(groups: [_proxyGroup]));
 
-    final submenu = _items(
-      showCall(),
-    ).firstWhere((item) => item['type'] == 'submenu');
-    expect(submenu['label'], 'Proxy');
-    final children = (submenu['items'] as List).cast<Map<Object?, Object?>>();
-    expect(children.map((item) => item['label']), contains('A'));
+    final groups = (lastPanelState()?['groups'] as List)
+        .cast<Map<Object?, Object?>>();
+    expect(groups, hasLength(1));
+    expect(groups.first['name'], 'Proxy');
+    final proxies = (groups.first['proxies'] as List)
+        .cast<Map<Object?, Object?>>();
+    expect(proxies.map((item) => item['name']), ['A', 'B', 'C']);
   });
 
-  test('shows each bound hotkey dimmed beside its entry', () async {
+  test('shows each bound hotkey in menu and panel shortcuts', () async {
     await update(
       _trayState(
         isStart: true,
@@ -314,6 +317,10 @@ void main() {
             PhysicalKeyboardKey.keyG,
           ),
           HotAction.tun: _bind(HotAction.tun, PhysicalKeyboardKey.keyT),
+          HotAction.delayTest: _bind(
+            HotAction.delayTest,
+            PhysicalKeyboardKey.keyD,
+          ),
         },
       ),
     );
@@ -321,14 +328,16 @@ void main() {
     final l10n = currentAppLocalizations;
     final call = showCall();
     expect(_item(call, l10n.show)['detail'], '⌃⇧V');
-    expect(_item(call, Mode.global.label)['detail'], '⌃⇧G');
-    expect(_item(call, l10n.tun)['detail'], '⌃⇧T');
     expect(_item(call, l10n.exit), isNot(contains('detail')));
-    expect(_item(call, Mode.rule.label), isNot(contains('detail')));
+    final shortcuts = lastPanelState()?['shortcuts'] as Map<Object?, Object?>;
+    expect(shortcuts['showWindow'], '⌃⇧V');
+    expect(shortcuts['modeGlobal'], '⌃⇧G');
+    expect(shortcuts['tun'], '⌃⇧T');
+    expect(shortcuts['testAllDelays'], '⌃⇧D');
   });
 
   test(
-    'group submenus show the delay of the selection and of each proxy',
+    'panel groups show the delay of the selection and of each proxy',
     () async {
       container.dispose();
       container = ProviderContainer(
@@ -351,96 +360,58 @@ void main() {
       );
       await update(_trayState(groups: [group]));
 
-      final submenu = _item(showCall(), 'Proxy');
-      expect(submenu['detail'], '120');
-      final children = (submenu['items'] as List).cast<Map<Object?, Object?>>();
-      expect(children.map((item) => item['detail']), [
-        '120',
-        currentAppLocalizations.timeout,
-        currentAppLocalizations.delayFailed,
-        null,
-      ]);
+      final groups = (lastPanelState()?['groups'] as List)
+          .cast<Map<Object?, Object?>>();
+      final proxyGroup = groups.single;
+      expect(proxyGroup['selectedDelay'], 120);
+      final proxies = (proxyGroup['proxies'] as List)
+          .cast<Map<Object?, Object?>>();
+      expect(proxies.map((item) => item['delay']), [120, -1, -2, null]);
     },
   );
 
-  test('a delay test entry follows the groups', () async {
-    await update(
-      _trayState(
-        groups: [_proxyGroup],
-        hotKeys: {
-          HotAction.delayTest: _bind(
-            HotAction.delayTest,
-            PhysicalKeyboardKey.keyD,
+  group('Windows tray panel and Linux full menu', () {
+    test(
+      'Windows builds slim menu, joins hotkeys with + and pushes panel state',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        final windows = AppTray.forPlatform(isMacOS: false, isWindows: true);
+        await update(
+          _trayState(
+            isStart: true,
+            groups: [_proxyGroup],
+            hotKeys: {
+              HotAction.view: _bind(HotAction.view, PhysicalKeyboardKey.keyV),
+            },
           ),
-        },
-      ),
+          on: windows,
+        );
+
+        expect(showCall()!.image.template, isFalse);
+        expect(
+          _item(showCall(), currentAppLocalizations.show)['detail'],
+          'Ctrl+Shift+V',
+        );
+        expect(lastPanelState()?['showMacOSToggles'], isFalse);
+        await windows.updateTitle(
+          showTrayTitle: true,
+          traffic: const Traffic(),
+        );
+        expect(host.titles, isEmpty);
+      },
     );
 
-    final items = _items(showCall());
-    final index = items.indexWhere((item) => item['type'] == 'submenu');
-    expect(items[index + 1]['label'], HotAction.delayTest.label);
-    expect(items[index + 1]['detail'], '⌃⇧D');
-  });
+    test('Linux keeps the full native menu without panel calls', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      final linux = AppTray.forPlatform(isMacOS: false, isWindows: false);
+      await update(_trayState(isStart: true), on: linux);
 
-  group('a platform that is not macOS', () {
-    late AppTray windows;
-
-    setUp(() {
-      windows = AppTray.forPlatform(isMacOS: false, isWindows: true);
-    });
-
-    test('gets a plain icon, no group submenus and no speed toggle', () async {
-      await update(
-        _trayState(
-          isStart: true,
-          groups: [
-            const Group(
-              name: 'Proxy',
-              type: GroupType.Selector,
-              all: [Proxy(name: 'A', type: 'Direct')],
-            ),
-          ],
-        ),
-        on: windows,
-      );
-
-      final arguments = showCall()!.arguments as Map;
-      expect((arguments['icon'] as Map)['isTemplate'], isFalse);
-      expect(
-        _items(showCall()).where((item) => item['type'] == 'submenu'),
-        isEmpty,
-      );
-      expect(
-        _labels(showCall()),
-        isNot(contains(currentAppLocalizations.speedStatistics)),
-      );
-      expect(
-        _labels(showCall()),
-        isNot(contains(currentAppLocalizations.monochromeIcon)),
-      );
-      expect(_labels(showCall()), isNot(contains(HotAction.delayTest.label)));
-    });
-
-    test('joins modifiers with + in the hotkey hints', () async {
-      await update(
-        _trayState(
-          hotKeys: {
-            HotAction.view: _bind(HotAction.view, PhysicalKeyboardKey.keyV),
-          },
-        ),
-        on: windows,
-      );
-
-      expect(
-        _item(showCall(), currentAppLocalizations.show)['detail'],
-        'Ctrl+Shift+V',
-      );
-    });
-
-    test('never pushes a tray title', () async {
-      await windows.updateTitle(showTrayTitle: true, traffic: const Traffic());
-
-      expect(calls.where((call) => call.method == 'setTitle'), isEmpty);
+      final labels = _labels(showCall());
+      final l10n = currentAppLocalizations;
+      expect(labels, contains(l10n.tun));
+      expect(labels, contains(l10n.systemProxy));
+      expect(labels, contains(Mode.global.label));
+      expect(panelCalls, isEmpty);
     });
   });
 }

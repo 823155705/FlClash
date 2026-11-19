@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:flutter_rust_bridge_hooks/flutter_rust_bridge_hooks.dart';
+import 'package:setup_hooks/setup_hooks.dart';
 
 void main(List<String> args) async {
   await build(args, (input, output) async {
@@ -10,11 +11,17 @@ void main(List<String> args) async {
       return;
     }
     await FlutterRustBridgeNativeAssetsBuilder(
-      cratePath: 'rust',
-      extraCargoEnvironmentVariables: _cargoEnvironment(input),
+      cratePath: _cratePath,
+      extraCargoEnvironmentVariables: {
+        ..._bindgenEnvironment(input),
+        ..._trimmedPathEnvironment(input),
+        ..._cargoEnvironment(input),
+      },
     ).run(input: input, output: output);
   });
 }
+
+const _cratePath = 'rust';
 
 Map<String, String> _cargoEnvironment(BuildInput input) {
   if (input.config.buildCodeAssets && input.config.code.targetOS == OS.macOS) {
@@ -22,7 +29,16 @@ Map<String, String> _cargoEnvironment(BuildInput input) {
     // the indirect symbol count is odd, which dyld rejects at load time.
     return const {'CARGO_PROFILE_RELEASE_STRIP': 'none'};
   }
-  return _bindgenEnvironment(input);
+  return const {};
+}
+
+Map<String, String> _trimmedPathEnvironment(BuildInput input) {
+  if (!input.config.buildCodeAssets) return const {};
+  return trimmedPathEnvironment(
+    checkoutDir: Directory.fromUri(input.packageRoot.resolve('../..')).path,
+    toolchainDir: Directory.fromUri(input.packageRoot.resolve(_cratePath)).path,
+    targetTriple: rustTargetTriple(input.config.code),
+  );
 }
 
 // rquickjs runs bindgen on Android, which must load the NDK's libclang; Linux

@@ -12,7 +12,8 @@ import 'package:fl_clash/providers/config.dart';
 import 'package:fl_clash/providers/state.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:tray/tray.dart';
+import 'package:rust_api/tray.dart';
+import 'package:tray_panel/tray_panel.dart';
 
 class TrayManager extends ConsumerStatefulWidget {
   final Widget child;
@@ -30,6 +31,7 @@ class TrayManager extends ConsumerStatefulWidget {
 
 class _TrayManagerState extends ConsumerState<TrayManager> {
   StreamSubscription<TrayEvent>? _subscription;
+  StreamSubscription<TrayPanelEvent>? _panelSubscription;
   final List<ProviderSubscription<Object?>> _panelSubscriptions = [];
   Timer? _panelDelaySyncTimer;
   bool _isUpdating = false;
@@ -42,6 +44,9 @@ class _TrayManagerState extends ConsumerState<TrayManager> {
   void initState() {
     super.initState();
     _subscription = Tray.instance.events.listen(_handleTrayEvent);
+    _panelSubscription = TrayPanel.instance.events.listen(
+      _handleTrayPanelEvent,
+    );
     ref.listenManual(trayStateProvider, (prev, next) {
       if (prev != next) {
         _requestUpdate();
@@ -202,29 +207,33 @@ class _TrayManagerState extends ConsumerState<TrayManager> {
   }
 
   void _handleTrayEvent(TrayEvent event) {
+    final panelCapabilities = TrayPanel.instance.capabilities;
     switch (event) {
       case TrayIconActivated():
-        final capabilities = Tray.instance.capabilities;
-        if (capabilities.panel && capabilities.panelOnActivate) {
-          _reportFailure(Tray.instance.togglePanel());
+        if (panelCapabilities.supported && panelCapabilities.openOnActivate) {
+          _reportFailure(TrayPanel.instance.toggle());
           return;
         }
-        if (capabilities.panel && _isPanelVisible) {
-          _reportFailure(Tray.instance.closePanel());
+        if (panelCapabilities.supported && _isPanelVisible) {
+          _reportFailure(TrayPanel.instance.close());
         }
         window?.show();
       case TrayMenuRequested():
-        final capabilities = Tray.instance.capabilities;
-        if (capabilities.panel && !capabilities.panelOnActivate) {
-          _reportFailure(Tray.instance.togglePanel());
+        if (panelCapabilities.supported && !panelCapabilities.openOnActivate) {
+          _reportFailure(TrayPanel.instance.toggle());
         } else {
-          if (capabilities.panel && _isPanelVisible) {
-            _reportFailure(Tray.instance.closePanel());
+          if (panelCapabilities.supported && _isPanelVisible) {
+            _reportFailure(TrayPanel.instance.close());
           }
           _reportFailure(Tray.instance.openMenu());
         }
       case TrayMenuItemSelected():
         break;
+    }
+  }
+
+  void _handleTrayPanelEvent(TrayPanelEvent event) {
+    switch (event) {
       case TrayPanelVisibilityChanged(:final visible):
         _handlePanelVisibilityChanged(visible);
       case TrayPanelAction():
@@ -240,6 +249,7 @@ class _TrayManagerState extends ConsumerState<TrayManager> {
   @override
   void dispose() {
     _detachPanelSubscriptions();
+    _panelSubscription?.cancel();
     _subscription?.cancel();
     super.dispose();
   }

@@ -1,15 +1,16 @@
+import 'package:fl_clash/common/app_localizations.dart';
 import 'package:fl_clash/common/tray.dart';
 import 'package:fl_clash/enum/enum.dart';
-import 'package:fl_clash/l10n/l10n.dart';
 import 'package:fl_clash/models/models.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:riverpod/riverpod.dart';
-import 'package:tray/tray.dart';
+import 'package:rust_api/tray.dart';
+import 'package:tray_panel/tray_panel.dart';
 
-const _channel = MethodChannel('tray');
+import '../helpers/fake_tray_host.dart';
 
 TrayState _trayState({bool isStart = false}) {
   return TrayState(
@@ -29,28 +30,28 @@ TrayState _trayState({bool isStart = false}) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late List<MethodCall> calls;
+  const panelChannel = MethodChannel('tray_panel');
+  late FakeTrayHost host;
   late ProviderContainer container;
 
   setUpAll(() async {
-    await AppLocalizations.load(const Locale('en'));
+    loadAppLocalizations(const Locale('en'));
   });
 
   setUp(() {
     debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-    calls = [];
+    host = FakeTrayHost();
     container = ProviderContainer();
-    Tray.instance.resetForTesting();
+    Tray.instance.resetForTesting(host);
+    TrayPanel.instance.resetForTesting();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(_channel, (call) async {
-          calls.add(call);
-          return true;
-        });
+        .setMockMethodCallHandler(panelChannel, (_) async => true);
   });
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(_channel, null);
+        .setMockMethodCallHandler(panelChannel, null);
+    TrayPanel.instance.resetForTesting();
     container.dispose();
     debugDefaultTargetPlatformOverride = null;
   });
@@ -62,12 +63,12 @@ void main() {
       traffic: const Traffic(),
       read: container.read,
     );
-    expect(calls.where((call) => call.method == 'show'), hasLength(1));
+    expect(host.shown, hasLength(1));
 
     await tray.shutdown();
-    expect(calls.where((call) => call.method == 'hide'), hasLength(1));
+    expect(host.hideCount, 1);
 
-    calls.clear();
+    host.clear();
     await tray.update(
       trayState: _trayState(isStart: true),
       traffic: const Traffic(),
@@ -75,7 +76,7 @@ void main() {
     );
     await tray.updateTitle(showTrayTitle: true, traffic: const Traffic());
 
-    expect(calls, isEmpty);
+    expect(host.callCount, 0);
   });
 
   test('macOS shutdown leaves the status item to the process', () async {
@@ -87,15 +88,15 @@ void main() {
     );
 
     await tray.shutdown();
-    expect(calls.where((call) => call.method == 'hide'), isEmpty);
+    expect(host.hideCount, 0);
 
-    calls.clear();
+    host.clear();
     await tray.update(
       trayState: _trayState(isStart: true),
       traffic: const Traffic(),
       read: container.read,
     );
 
-    expect(calls, isEmpty);
+    expect(host.callCount, 0);
   });
 }

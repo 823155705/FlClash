@@ -2,7 +2,7 @@
 set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-FLUTTER_ROOT=${FLUTTER_ROOT:-"$ROOT_DIR/.toolchains/flutter-3.47.6"}
+FLUTTER_ROOT=${FLUTTER_ROOT:-"$ROOT_DIR/.toolchains/flutter-3.50.0"}
 CARGO_HOME=${CARGO_HOME:-"$ROOT_DIR/.toolchains/cargo"}
 RUSTUP_HOME=${RUSTUP_HOME:-"$ROOT_DIR/.toolchains/rustup"}
 PUB_CACHE=${PUB_CACHE:-"$HOME/.pub-cache"}
@@ -13,4 +13,4 @@ export APP_TRAFFIC_CUSTOM_BUILD=true
 export APP_UPDATE_REPOSITORY=${APP_UPDATE_REPOSITORY:-"$(gh api user --jq .login)/FlClash"}
 
 cd "$ROOT_DIR"
-exec dart setup.dart macos --env stable "$@"
+exec dart tool/package.dart macos --env stable "$@"

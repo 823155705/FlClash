@@ -7,7 +7,8 @@ import 'package:fl_clash/models/models.dart';
 import 'package:fl_clash/providers/providers.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:prism_ui/prism_ui.dart';
-import 'package:tray/tray.dart';
+import 'package:rust_api/tray.dart';
+import 'package:tray_panel/tray_panel.dart';
 
 import 'app_localizations.dart';
 import 'app_ports.dart';
@@ -90,7 +91,7 @@ class AppTray implements TrayPort {
     // Removing a status item makes macOS forget where the user dragged it in
     // the menu bar; one that goes away with the process keeps its place.
     if (isMacOS) {
-      await Tray.instance.closePanel();
+      await TrayPanel.instance.close();
       return;
     }
     await Tray.instance.hide();
@@ -141,19 +142,23 @@ class AppTray implements TrayPort {
     required TrayState trayState,
     required ProviderReader read,
   }) async {
-    if (_isShutDown || !_supportsPanel || !Tray.instance.capabilities.panel) {
+    if (_isShutDown ||
+        !_supportsPanel ||
+        !TrayPanel.instance.capabilities.supported) {
       return;
     }
-    await Tray.instance.setPanelState(
+    await TrayPanel.instance.setState(
       buildPanelState(trayState: trayState, read: read),
     );
   }
 
   Future<void> updatePanelTraffic(Traffic traffic) async {
-    if (_isShutDown || !_supportsPanel || !Tray.instance.capabilities.panel) {
+    if (_isShutDown ||
+        !_supportsPanel ||
+        !TrayPanel.instance.capabilities.supported) {
       return;
     }
-    await Tray.instance.setPanelTraffic(buildPanelTraffic(traffic));
+    await TrayPanel.instance.setTraffic(buildPanelTraffic(traffic));
   }
 
   @visibleForTesting
@@ -335,7 +340,7 @@ class AppTray implements TrayPort {
     }
     switch (event.action) {
       case TrayPanelActionNames.showWindow:
-        unawaited(Tray.instance.closePanel());
+        unawaited(TrayPanel.instance.close());
         unawaited(window?.show());
       case TrayPanelActionNames.toggleRunning:
         read(commonActionProvider.notifier).toggleRunning();
@@ -394,7 +399,7 @@ class AppTray implements TrayPort {
       case TrayPanelActionNames.copyEnv:
         unawaited(read(systemActionProvider.notifier).copyProxyEnv());
       case TrayPanelActionNames.quit:
-        unawaited(Tray.instance.closePanel());
+        unawaited(TrayPanel.instance.close());
         unawaited(read(systemActionProvider.notifier).handleExit());
     }
   }

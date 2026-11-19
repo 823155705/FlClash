@@ -134,6 +134,7 @@ class _RecordFeedListState<T> extends State<RecordFeedList<T>>
       itemExtent: widget.itemExtent,
       estimatedItemExtent: widget.estimatedItemExtent,
       findChildIndexCallback: _indexOf,
+      anchorAtEnd: true,
       itemBuilder: (_, index) {
         final item = widget.items[index];
         final key = widget.keyOf(item);

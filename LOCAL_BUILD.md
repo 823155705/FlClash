@@ -2,7 +2,7 @@
 
 上游版本来自 chen08209/FlClash。应用流量统计位于 `lib/manager/app_traffic_tracker.dart`、`lib/database/app_traffic.dart` 和 `lib/views/traffic/app_traffic.dart`。
 
-macOS 本地构建使用 Flutter 3.47.6、Go 1.27 和 Rust：
+macOS 本地构建使用 Flutter 3.50.0、Go 1.27 和 Rust：
 
 ```bash
 APP_UPDATE_REPOSITORY=<GitHub用户名>/FlClash ./tool/build_local_macos.sh

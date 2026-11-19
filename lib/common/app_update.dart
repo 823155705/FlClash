@@ -5,13 +5,14 @@ import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/common/release_asset.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/plugins/app.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:path/path.dart';
 
-const releaseChecksumsName = 'SHA256SUMS';
+const appReleaseLine = ReleaseLine.dev;
 const appTrafficCustomBuild = bool.fromEnvironment('APP_TRAFFIC_CUSTOM_BUILD');
 
 sealed class UpdateDownload {
@@ -35,33 +36,58 @@ final class UpdateReady extends UpdateDownload {
   final String path;
 }
 
+typedef SelfUpdateAsset = ({
+  ReleaseOs os,
+  ReleaseArch arch,
+  ReleaseForm? form,
+  String extension,
+});
+
 @visibleForTesting
-String? Function() resolveSelfUpdateSuffix = () => selfUpdateAssetSuffix(
+SelfUpdateAsset? Function() resolveSelfUpdateAsset = () => selfUpdateAssetFor(
   Abi.current(),
   windowsInstalled: system.isWindows && isInstalledWindowsBuild,
 );
 
-String? get selfUpdateSuffix => resolveSelfUpdateSuffix();
+SelfUpdateAsset? get selfUpdateAsset => resolveSelfUpdateAsset();
 
-// The names follow the release matrix in .github/workflows/build.yaml.
-String? selfUpdateAssetSuffix(Abi abi, {required bool windowsInstalled}) {
+// The release matrix in .github/workflows/build.yaml builds each of these.
+SelfUpdateAsset? selfUpdateAssetFor(Abi abi, {required bool windowsInstalled}) {
+  SelfUpdateAsset apk(ReleaseArch arch) =>
+      (os: ReleaseOs.android, arch: arch, form: null, extension: 'apk');
+  SelfUpdateAsset dmg(ReleaseArch arch) =>
+      (os: ReleaseOs.macos, arch: arch, form: null, extension: 'dmg');
+  SelfUpdateAsset setup(ReleaseArch arch) => (
+    os: ReleaseOs.windows,
+    arch: arch,
+    form: ReleaseForm.setup,
+    extension: 'exe',
+  );
   return switch (abi) {
-    Abi.androidArm64 => 'android-arm64-v8a.apk',
-    Abi.androidArm => 'android-armeabi-v7a.apk',
-    Abi.androidX64 => 'android-x86_64.apk',
-    Abi.macosArm64 => 'macos-arm64.dmg',
-    Abi.macosX64 => 'macos-amd64.dmg',
-    Abi.windowsX64 when windowsInstalled => 'windows-amd64-setup.exe',
-    Abi.windowsArm64 when windowsInstalled => 'windows-arm64-setup.exe',
+    Abi.androidArm64 => apk(ReleaseArch.arm64),
+    Abi.androidArm => apk(ReleaseArch.armv7),
+    Abi.androidX64 => apk(ReleaseArch.amd64),
+    Abi.macosArm64 => dmg(ReleaseArch.arm64),
+    Abi.macosX64 => dmg(ReleaseArch.amd64),
+    Abi.windowsX64 when windowsInstalled => setup(ReleaseArch.amd64),
+    Abi.windowsArm64 when windowsInstalled => setup(ReleaseArch.arm64),
     _ => null,
   };
 }
 
-String releaseAssetName(String tag, String suffix) {
-  final version = (tag.startsWith('v') ? tag.substring(1) : tag)
-      .split('+')
-      .first;
-  return '$appName-$version-$suffix';
+String updateAssetName(String tag, SelfUpdateAsset asset) {
+  return releaseAssetName(
+    line: appReleaseLine,
+    version: releaseVersionOfTag(tag),
+    os: asset.os,
+    arch: asset.arch,
+    form: asset.form,
+    extension: asset.extension,
+  );
+}
+
+String updateChecksumsName(String tag) {
+  return releaseChecksumsName(appReleaseLine, releaseVersionOfTag(tag));
 }
 
 bool hasReleaseUpdate(

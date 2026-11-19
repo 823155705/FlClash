@@ -92,7 +92,7 @@ class _CoreContainerState extends ConsumerState<CoreManager>
       },
     );
     ref.listenManual(mitmModulesProvider, (prev, next) {
-      if (mitmFeature &&
+      if (rsFeature &&
           prev?.value != null &&
           next.hasValue &&
           ref.read(patchClashConfigProvider).mitm.enable) {
@@ -197,7 +197,9 @@ class _CoreContainerState extends ConsumerState<CoreManager>
         _ticksUntilSnapshot = _trafficSnapshotIntervalTicks;
         final epoch = _trafficEpoch;
         final snapshotToken = _trafficTracker.beginSnapshot();
-        final connections = await _core.getConnections();
+        final connections = await _core.getConnectionsWith(
+          (connections) => connections,
+        );
         if (mounted && epoch == _trafficEpoch) {
           await _trafficTracker.observeSnapshot(
             connections,
@@ -308,6 +310,8 @@ class _CoreContainerState extends ConsumerState<CoreManager>
       return;
     }
     ref.read(coreStatusProvider.notifier).value = CoreStatus.disconnected;
+    ref.read(coreStopReasonProvider.notifier).value = message;
+    ref.read(setupActionProvider.notifier).onCoreLost();
     if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
       dialogs.showBanner(message, level: BannerLevel.error);
     }
