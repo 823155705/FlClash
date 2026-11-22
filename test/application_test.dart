@@ -17,6 +17,7 @@ Widget? _childOf(Widget widget) {
     ProxyManager(:final child) => child,
     AndroidManager(:final child) => child,
     TileManager(:final child) => child,
+    WidgetManager(:final child) => child,
     AppStateManager(:final child) => child,
     CoreManager(:final child) => child,
     ConnectivityManager(:final child) => child,
@@ -78,6 +79,7 @@ void main() {
       ThemeManager,
       AndroidManager,
       TileManager,
+      WidgetManager,
       AppStateManager,
       CoreManager,
       ConnectivityManager,
@@ -111,6 +113,7 @@ void main() {
         anyOf(
           contains(AndroidManager),
           contains(TileManager),
+          contains(WidgetManager),
           contains(VpnManager),
         ),
       ),

@@ -1137,5 +1137,11 @@
   "coreRunningDesc": "アプリはコアに接続されています",
   "forceRestartCore": "強制再起動",
   "vpnPermissionNotGranted": "VPN の権限が許可されなかったため、VPN は起動しませんでした。ほかのアプリが常時接続 VPN に設定されている場合も起動できません。",
-  "vpnServiceStartFailed": "VPN サービスを起動できませんでした。"
+  "vpnServiceStartFailed": "VPN サービスを起動できませんでした。",
+  "stopping": "停止中…",
+  "noProfile": "プロファイルなし",
+  "tapToStart": "タップして開始",
+  "selectNode": "ノードを選択",
+  "noNodesAvailable": "利用可能なノードがありません",
+  "openApp": "FlClash を開く"
 }

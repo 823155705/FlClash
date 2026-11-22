@@ -1137,5 +1137,11 @@
   "coreRunningDesc": "La app está conectada al núcleo",
   "forceRestartCore": "Forzar reinicio",
   "vpnPermissionNotGranted": "No se concedió el permiso de VPN, así que la VPN no se inició. Una VPN siempre activa configurada en otra app también lo impide.",
-  "vpnServiceStartFailed": "No se pudo iniciar el servicio VPN."
+  "vpnServiceStartFailed": "No se pudo iniciar el servicio VPN.",
+  "stopping": "Deteniendo…",
+  "noProfile": "Sin perfil",
+  "tapToStart": "Toca para iniciar",
+  "selectNode": "Seleccionar nodo",
+  "noNodesAvailable": "No hay nodos disponibles",
+  "openApp": "Abrir FlClash"
 }

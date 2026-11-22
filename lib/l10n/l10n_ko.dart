@@ -3852,4 +3852,22 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get vpnServiceStartFailed => 'VPN 서비스를 시작하지 못했습니다.';
+
+  @override
+  String get stopping => '중지 중…';
+
+  @override
+  String get noProfile => '프로필 없음';
+
+  @override
+  String get tapToStart => '탭하여 시작';
+
+  @override
+  String get selectNode => '노드 선택';
+
+  @override
+  String get noNodesAvailable => '사용 가능한 노드가 없습니다';
+
+  @override
+  String get openApp => 'FlClash 열기';
 }

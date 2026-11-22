@@ -6941,6 +6941,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The VPN service could not start.'**
   String get vpnServiceStartFailed;
+
+  /// No description provided for @stopping.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopping…'**
+  String get stopping;
+
+  /// No description provided for @noProfile.
+  ///
+  /// In en, this message translates to:
+  /// **'No profile'**
+  String get noProfile;
+
+  /// No description provided for @tapToStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to start'**
+  String get tapToStart;
+
+  /// No description provided for @selectNode.
+  ///
+  /// In en, this message translates to:
+  /// **'Select node'**
+  String get selectNode;
+
+  /// No description provided for @noNodesAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'No nodes available'**
+  String get noNodesAvailable;
+
+  /// No description provided for @openApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Open FlClash'**
+  String get openApp;
 }
 
 class _AppLocalizationsDelegate

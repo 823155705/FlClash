@@ -3998,4 +3998,22 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get vpnServiceStartFailed => 'No se pudo iniciar el servicio VPN.';
+
+  @override
+  String get stopping => 'Deteniendo…';
+
+  @override
+  String get noProfile => 'Sin perfil';
+
+  @override
+  String get tapToStart => 'Toca para iniciar';
+
+  @override
+  String get selectNode => 'Seleccionar nodo';
+
+  @override
+  String get noNodesAvailable => 'No hay nodos disponibles';
+
+  @override
+  String get openApp => 'Abrir FlClash';
 }

@@ -1137,5 +1137,11 @@
   "coreRunningDesc": "应用已连接到核心",
   "forceRestartCore": "强制重启",
   "vpnPermissionNotGranted": "未获得 VPN 权限，VPN 没有启动。其他应用设为始终开启的 VPN 时也会如此。",
-  "vpnServiceStartFailed": "VPN 服务无法启动。"
+  "vpnServiceStartFailed": "VPN 服务无法启动。",
+  "stopping": "停止中…",
+  "noProfile": "无配置",
+  "tapToStart": "点击启动",
+  "selectNode": "选择节点",
+  "noNodesAvailable": "暂无可用节点",
+  "openApp": "打开 FlClash"
 }

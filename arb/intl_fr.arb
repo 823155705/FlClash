@@ -1137,5 +1137,11 @@
   "coreRunningDesc": "L’application est connectée au cœur",
   "forceRestartCore": "Forcer le redémarrage",
   "vpnPermissionNotGranted": "L'autorisation VPN n'a pas été accordée, le VPN n'a donc pas démarré. Un VPN permanent défini pour une autre application l'empêche aussi.",
-  "vpnServiceStartFailed": "Le service VPN n'a pas pu démarrer."
+  "vpnServiceStartFailed": "Le service VPN n'a pas pu démarrer.",
+  "stopping": "Arrêt…",
+  "noProfile": "Aucun profil",
+  "tapToStart": "Appuyez pour démarrer",
+  "selectNode": "Sélectionner un nœud",
+  "noNodesAvailable": "Aucun nœud disponible",
+  "openApp": "Ouvrir FlClash"
 }

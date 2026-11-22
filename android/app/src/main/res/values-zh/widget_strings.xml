@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_name_2x2">FlClash (2×2)</string>
+    <string name="widget_desc_2x2">快速开关、出站模式与节点控制</string>
+    <string name="widget_name_4x2">FlClash (4×2)</string>
+    <string name="widget_desc_4x2">实时流量曲线、连接状态与节点控制</string>
+    <string name="widget_name_4x1">FlClash (4×1)</string>
+    <string name="widget_desc_4x1">紧凑单行控制条</string>
+    <string name="widget_status_running">运行中</string>
+    <string name="widget_status_not_running">未运行</string>
+    <string name="widget_status_connecting">连接中…</string>
+    <string name="widget_status_stopping">停止中…</string>
+    <string name="widget_status_suspended">挂起中…</string>
+    <string name="widget_status_no_profile">未配置</string>
+    <string name="widget_tap_to_start">点击启动</string>
+    <string name="widget_mode_rule">规则</string>
+    <string name="widget_mode_global">全局</string>
+    <string name="widget_mode_direct">直连</string>
+    <string name="widget_select_node_title">选择节点</string>
+    <string name="widget_no_nodes">暂无可用节点</string>
+    <string name="widget_a11y_toggle">切换代理开关</string>
+    <string name="widget_tun">TUN</string>
+    <string name="widget_preview_node">香港 01 IEPL</string>
+    <string name="widget_preview_group">节点选择</string>
+    <string name="widget_preview_down">↓ 12.4 MB/s</string>
+    <string name="widget_preview_up">↑ 1.8 MB/s</string>
+    <string name="widget_preview_speed_compact">↓12.4M  ↑1.8M</string>
+</resources>

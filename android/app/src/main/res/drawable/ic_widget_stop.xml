@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/widget_on_primary"
+        android:pathData="M17.10,7.10 L17.10,16.90 Q17.10,18.10 16.00,18.10 L16.00,18.10 Q14.90,18.10 14.90,16.90 L14.90,7.10 Q14.90,5.90 16.00,5.90 L16.00,5.90 Q17.10,5.90 17.10,7.10 Z"
+        android:strokeColor="@color/widget_on_primary"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.8" />
+    <path
+        android:fillColor="@color/widget_on_primary"
+        android:pathData="M9.10,7.10 L9.10,16.90 Q9.10,18.10 8.00,18.10 L8.00,18.10 Q6.90,18.10 6.90,16.90 L6.90,7.10 Q6.90,5.90 8.00,5.90 L8.00,5.90 Q9.10,5.90 9.10,7.10 Z"
+        android:strokeColor="@color/widget_on_primary"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.8" />
+</vector>

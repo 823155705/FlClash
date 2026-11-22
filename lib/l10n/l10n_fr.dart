@@ -4003,4 +4003,22 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get vpnServiceStartFailed => 'Le service VPN n\'a pas pu démarrer.';
+
+  @override
+  String get stopping => 'Arrêt…';
+
+  @override
+  String get noProfile => 'Aucun profil';
+
+  @override
+  String get tapToStart => 'Appuyez pour démarrer';
+
+  @override
+  String get selectNode => 'Sélectionner un nœud';
+
+  @override
+  String get noNodesAvailable => 'Aucun nœud disponible';
+
+  @override
+  String get openApp => 'Ouvrir FlClash';
 }

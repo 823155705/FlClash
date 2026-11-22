@@ -3728,4 +3728,22 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get vpnServiceStartFailed => 'VPN 服务无法启动。';
+
+  @override
+  String get stopping => '停止中…';
+
+  @override
+  String get noProfile => '无配置';
+
+  @override
+  String get tapToStart => '点击启动';
+
+  @override
+  String get selectNode => '选择节点';
+
+  @override
+  String get noNodesAvailable => '暂无可用节点';
+
+  @override
+  String get openApp => '打开 FlClash';
 }

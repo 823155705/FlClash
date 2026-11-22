@@ -1137,5 +1137,11 @@
   "coreRunningDesc": "Приложение подключено к ядру",
   "forceRestartCore": "Принудительный перезапуск",
   "vpnPermissionNotGranted": "Разрешение на VPN не выдано, поэтому VPN не запущен. Постоянная VPN, заданная для другого приложения, тоже мешает запуску.",
-  "vpnServiceStartFailed": "Не удалось запустить службу VPN."
+  "vpnServiceStartFailed": "Не удалось запустить службу VPN.",
+  "stopping": "Остановка…",
+  "noProfile": "Нет профиля",
+  "tapToStart": "Нажмите для запуска",
+  "selectNode": "Выберите узел",
+  "noNodesAvailable": "Нет доступных узлов",
+  "openApp": "Открыть FlClash"
 }
