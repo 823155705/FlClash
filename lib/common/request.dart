@@ -110,7 +110,7 @@ class Request {
     final hasUpdate = hasReleaseUpdate(
       release,
       globalState.packageInfo.version,
-      globalState.packageInfo.buildNumber,
+      resolveInstalledBuildNumber(globalState.packageInfo.buildNumber),
     );
     return hasUpdate ? release : null;
   }

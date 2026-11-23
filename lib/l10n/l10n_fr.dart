@@ -4063,4 +4063,40 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get openApp => 'Ouvrir FlClash';
+
+  @override
+  String get homeWidgets => 'Widgets d\'écran d\'accueil';
+
+  @override
+  String get homeWidgetsDesc =>
+      'Appuyez sur une taille de widget pour l\'épingler sur l\'écran d\'accueil.';
+
+  @override
+  String get homeWidget2x2Title => '2×2 Mini tableau de bord';
+
+  @override
+  String get homeWidget2x2Desc =>
+      'Interrupteur rapide, débit en direct, mode et choix de nœud.';
+
+  @override
+  String get homeWidget4x2Title => '4×2 Tableau de bord';
+
+  @override
+  String get homeWidget4x2Desc =>
+      'Graphique de trafic, statut, durée de connexion et choix de nœud.';
+
+  @override
+  String get homeWidget4x1Title => '4×1 Barre compacte';
+
+  @override
+  String get homeWidget4x1Desc =>
+      'Barre compacte avec interrupteur, débit et sélection de nœud.';
+
+  @override
+  String get homeWidgetPinRequested =>
+      'Demande d\'ajout envoyée à l\'écran d\'accueil';
+
+  @override
+  String get homeWidgetPinUnsupported =>
+      'Ce lanceur ne prend pas en charge l\'épinglage depuis l\'application. Ajoutez-le manuellement depuis les widgets Android sur votre écran d\'accueil.';
 }

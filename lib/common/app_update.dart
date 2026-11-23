@@ -14,6 +14,15 @@ import 'package:path/path.dart';
 
 const appReleaseLine = ReleaseLine.dev;
 const appTrafficCustomBuild = bool.fromEnvironment('APP_TRAFFIC_CUSTOM_BUILD');
+const appBuildNumber = String.fromEnvironment('APP_BUILD_NUMBER');
+
+String resolveInstalledBuildNumber(
+  String packageBuild, {
+  String definedBuild = appBuildNumber,
+}) {
+  final trimmed = definedBuild.trim();
+  return trimmed.isNotEmpty ? trimmed : packageBuild;
+}
 
 sealed class UpdateDownload {
   const UpdateDownload(this.tag);

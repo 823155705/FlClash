@@ -158,6 +158,7 @@ List<Step> planBuild(
 }) {
   final environment = <String, String>{
     'APP_ENV': env,
+    'APP_BUILD_NUMBER': context.buildNumber,
     if (Platform.environment['APP_TRAFFIC_CUSTOM_BUILD'] == 'true')
       'APP_TRAFFIC_CUSTOM_BUILD': 'true',
     if (Platform.environment['APP_UPDATE_REPOSITORY'] case final String repo

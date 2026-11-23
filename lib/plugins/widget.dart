@@ -5,6 +5,16 @@ import 'package:fl_clash/enum/enum.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+enum WidgetPinKind {
+  compact2x2('2x2'),
+  wide4x2('4x2'),
+  bar4x1('4x1');
+
+  const WidgetPinKind(this.wireValue);
+
+  final String wireValue;
+}
+
 sealed class PendingWidgetAction {
   const PendingWidgetAction();
 }
@@ -120,6 +130,38 @@ class WidgetChannel {
     } on PlatformException catch (error) {
       commonPrint.log(
         'Unable to query active widgets: ${compactError(error)}',
+        logLevel: LogLevel.warning,
+      );
+      return false;
+    }
+  }
+
+  Future<bool> isRequestPinSupported() async {
+    try {
+      return await _channel.invokeMethod<bool>('isRequestPinWidgetSupported') ??
+          false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException catch (error) {
+      commonPrint.log(
+        'Unable to query widget pin support: ${compactError(error)}',
+        logLevel: LogLevel.warning,
+      );
+      return false;
+    }
+  }
+
+  Future<bool> requestPinWidget(WidgetPinKind kind) async {
+    try {
+      return await _channel.invokeMethod<bool>('requestPinWidget', {
+            'kind': kind.wireValue,
+          }) ??
+          false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException catch (error) {
+      commonPrint.log(
+        'Unable to request widget pin: ${compactError(error)}',
         logLevel: LogLevel.warning,
       );
       return false;

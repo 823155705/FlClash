@@ -3911,4 +3911,35 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get openApp => 'FlClash 열기';
+
+  @override
+  String get homeWidgets => '홈 화면 위젯';
+
+  @override
+  String get homeWidgetsDesc => '위젯 크기를 탭하여 홈 화면에 바로 추가할 수 있습니다.';
+
+  @override
+  String get homeWidget2x2Title => '2×2 미니 대시보드';
+
+  @override
+  String get homeWidget2x2Desc => '빠른 전환, 실시간 속도, 아웃바운드 모드 및 노드 제어.';
+
+  @override
+  String get homeWidget4x2Title => '4×2 대시보드';
+
+  @override
+  String get homeWidget4x2Desc => '실시간 트래픽 그래프, 연결 상태, 가동 시간 및 노드 제어.';
+
+  @override
+  String get homeWidget4x1Title => '4×1 컴팩트 컨트롤 바';
+
+  @override
+  String get homeWidget4x1Desc => '한 줄 빠른 전환, 실시간 속도 및 노드 선택.';
+
+  @override
+  String get homeWidgetPinRequested => '홈 화면에 위젯 추가 요청을 보냈습니다';
+
+  @override
+  String get homeWidgetPinUnsupported =>
+      '현재 런처에서는 앱 내 바로 추가를 지원하지 않습니다. 홈 화면의 \'Android 위젯\'에서 수동으로 추가해 주세요.';
 }

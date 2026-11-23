@@ -1156,5 +1156,15 @@
   "tapToStart": "タップして開始",
   "selectNode": "ノードを選択",
   "noNodesAvailable": "利用可能なノードがありません",
-  "openApp": "FlClash を開く"
+  "openApp": "FlClash を開く",
+  "homeWidgets": "ホーム画面ウィジェット",
+  "homeWidgetsDesc": "ウィジェットのサイズをタップしてホーム画面に追加します。",
+  "homeWidget2x2Title": "2×2 ミニダッシュボード",
+  "homeWidget2x2Desc": "クイック切替、リアルタイム速度、モードとノード操作。",
+  "homeWidget4x2Title": "4×2 ダッシュボード",
+  "homeWidget4x2Desc": "リアルタイム通信グラフ、接続状態、稼働時間とノード操作。",
+  "homeWidget4x1Title": "4×1 コンパクトバー",
+  "homeWidget4x1Desc": "1行のクイック切替、リアルタイム速度とノード選択。",
+  "homeWidgetPinRequested": "ホーム画面への追加リクエストを送信しました",
+  "homeWidgetPinUnsupported": "このランチャーはアプリ内からの追加に対応していません。ホーム画面の「Android ウィジェット」から手動で追加してください。"
 }

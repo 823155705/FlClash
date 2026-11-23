@@ -128,4 +128,52 @@ void main() {
     expect(arguments, containsAll(['/SILENT', '/SUPPRESSMSGBOXES']));
     expect(arguments, contains('/updatefrom=4242'));
   });
+
+  group('resolveInstalledBuildNumber and hasReleaseUpdate', () {
+    test('prefers defined APP_BUILD_NUMBER over split-per-abi versionCode', () {
+      final installedBuild = resolveInstalledBuildNumber(
+        '2026113905',
+        definedBuild: '2026111905',
+      );
+      expect(installedBuild, '2026111905');
+      expect(
+        hasReleaseUpdate(
+          {'tag_name': 'v0.9.4+2026112301'},
+          '0.9.4',
+          installedBuild,
+          includeBuild: true,
+        ),
+        isTrue,
+      );
+      expect(
+        hasReleaseUpdate(
+          {'tag_name': 'v0.9.4+2026111905'},
+          '0.9.4',
+          installedBuild,
+          includeBuild: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('falls back to packageBuild when definedBuild is empty', () {
+      expect(
+        resolveInstalledBuildNumber('2026111905', definedBuild: ''),
+        '2026111905',
+      );
+      expect(
+        resolveInstalledBuildNumber('2026111905', definedBuild: '   '),
+        '2026111905',
+      );
+      expect(
+        hasReleaseUpdate(
+          {'tag_name': 'v0.9.4+2026112301'},
+          '0.9.4',
+          resolveInstalledBuildNumber('2026111905', definedBuild: ''),
+          includeBuild: true,
+        ),
+        isTrue,
+      );
+    });
+  });
 }

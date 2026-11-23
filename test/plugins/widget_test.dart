@@ -230,4 +230,90 @@ void main() {
       expect(await WidgetChannel.instance.consumePendingAction(), isNull);
     },
   );
+
+  test(
+    'isRequestPinSupported forwards call and defaults to false on errors',
+    () async {
+      const methodChannel = MethodChannel(channelName);
+      final calls = <MethodCall>[];
+      messenger.setMockMethodCallHandler(methodChannel, (call) async {
+        calls.add(call);
+        return true;
+      });
+      expect(await WidgetChannel.instance.isRequestPinSupported(), isTrue);
+      expect(calls.single.method, 'isRequestPinWidgetSupported');
+
+      messenger.setMockMethodCallHandler(methodChannel, (_) async => false);
+      expect(await WidgetChannel.instance.isRequestPinSupported(), isFalse);
+
+      messenger.setMockMethodCallHandler(methodChannel, (_) async => null);
+      expect(await WidgetChannel.instance.isRequestPinSupported(), isFalse);
+
+      messenger.setMockMethodCallHandler(methodChannel, (_) async {
+        throw PlatformException(code: 'ERR');
+      });
+      expect(await WidgetChannel.instance.isRequestPinSupported(), isFalse);
+
+      messenger.setMockMethodCallHandler(methodChannel, null);
+      expect(await WidgetChannel.instance.isRequestPinSupported(), isFalse);
+    },
+  );
+
+  test('requestPinWidget maps each kind and returns false on errors', () async {
+    const methodChannel = MethodChannel(channelName);
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(methodChannel, (call) async {
+      calls.add(call);
+      return true;
+    });
+
+    expect(
+      await WidgetChannel.instance.requestPinWidget(WidgetPinKind.compact2x2),
+      isTrue,
+    );
+    expect(
+      await WidgetChannel.instance.requestPinWidget(WidgetPinKind.wide4x2),
+      isTrue,
+    );
+    expect(
+      await WidgetChannel.instance.requestPinWidget(WidgetPinKind.bar4x1),
+      isTrue,
+    );
+    expect(calls.map((c) => c.method).toList(), [
+      'requestPinWidget',
+      'requestPinWidget',
+      'requestPinWidget',
+    ]);
+    expect(calls.map((c) => c.arguments).toList(), [
+      {'kind': '2x2'},
+      {'kind': '4x2'},
+      {'kind': '4x1'},
+    ]);
+
+    messenger.setMockMethodCallHandler(methodChannel, (_) async => false);
+    expect(
+      await WidgetChannel.instance.requestPinWidget(WidgetPinKind.compact2x2),
+      isFalse,
+    );
+
+    messenger.setMockMethodCallHandler(methodChannel, (_) async => null);
+    expect(
+      await WidgetChannel.instance.requestPinWidget(WidgetPinKind.compact2x2),
+      isFalse,
+    );
+
+    messenger.setMockMethodCallHandler(methodChannel, (_) async {
+      throw PlatformException(code: 'ERR');
+    });
+    expect(
+      await WidgetChannel.instance.requestPinWidget(WidgetPinKind.compact2x2),
+      isFalse,
+    );
+
+    messenger.setMockMethodCallHandler(methodChannel, null);
+    expect(
+      await WidgetChannel.instance.requestPinWidget(WidgetPinKind.compact2x2),
+      isFalse,
+    );
+  });
 }

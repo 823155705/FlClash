@@ -4058,4 +4058,40 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get openApp => 'Abrir FlClash';
+
+  @override
+  String get homeWidgets => 'Widgets de pantalla de inicio';
+
+  @override
+  String get homeWidgetsDesc =>
+      'Pulsa un tamaño de widget para fijarlo en la pantalla de inicio.';
+
+  @override
+  String get homeWidget2x2Title => '2×2 Panel compacto';
+
+  @override
+  String get homeWidget2x2Desc =>
+      'Interruptor rápido, velocidad en vivo, modo y control de nodo.';
+
+  @override
+  String get homeWidget4x2Title => '4×2 Panel';
+
+  @override
+  String get homeWidget4x2Desc =>
+      'Gráfico de tráfico, estado, tiempo activo y control de nodo.';
+
+  @override
+  String get homeWidget4x1Title => '4×1 Barra compacta';
+
+  @override
+  String get homeWidget4x1Desc =>
+      'Fila única con interruptor rápido, velocidad y selector de nodo.';
+
+  @override
+  String get homeWidgetPinRequested =>
+      'Solicitud de widget enviada a la pantalla de inicio';
+
+  @override
+  String get homeWidgetPinUnsupported =>
+      'Este lanzador no admite fijar desde la aplicación. Añádelo manualmente desde los widgets de Android en la pantalla de inicio.';
 }

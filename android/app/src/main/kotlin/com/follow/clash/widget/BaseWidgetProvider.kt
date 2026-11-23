@@ -2,9 +2,7 @@ package com.follow.clash.widget
 
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
-import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -48,17 +46,6 @@ abstract class BaseWidgetProvider internal constructor(
         dispatchAsyncUpdate(context, intArrayOf(appWidgetId))
     }
 
-    override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == ACTION_MIUI_APPWIDGET_UPDATE) {
-            val manager = AppWidgetManager.getInstance(context)
-            val ids = intent.getIntArrayExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS)
-                ?: manager.getAppWidgetIds(ComponentName(context, javaClass))
-            dispatchAsyncUpdate(context, ids)
-            return
-        }
-        super.onReceive(context, intent)
-    }
-
     private fun dispatchAsyncUpdate(context: Context, widgetIds: IntArray) {
         val pendingResult = goAsync()
         val lease = BroadcastLease { pendingResult.finish() }
@@ -77,7 +64,6 @@ abstract class BaseWidgetProvider internal constructor(
     }
 
     private companion object {
-        const val ACTION_MIUI_APPWIDGET_UPDATE = "miui.appwidget.action.APPWIDGET_UPDATE"
         const val BROADCAST_TIMEOUT_MILLIS = 9_000L
         val mainHandler = Handler(Looper.getMainLooper())
     }

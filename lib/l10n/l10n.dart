@@ -7055,6 +7055,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open FlClash'**
   String get openApp;
+
+  /// No description provided for @homeWidgets.
+  ///
+  /// In en, this message translates to:
+  /// **'Home screen widgets'**
+  String get homeWidgets;
+
+  /// No description provided for @homeWidgetsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap a widget size to pin it to your home screen.'**
+  String get homeWidgetsDesc;
+
+  /// No description provided for @homeWidget2x2Title.
+  ///
+  /// In en, this message translates to:
+  /// **'2×2 Mini Dashboard'**
+  String get homeWidget2x2Title;
+
+  /// No description provided for @homeWidget2x2Desc.
+  ///
+  /// In en, this message translates to:
+  /// **'Quick toggle, live speed, outbound mode, and proxy control.'**
+  String get homeWidget2x2Desc;
+
+  /// No description provided for @homeWidget4x2Title.
+  ///
+  /// In en, this message translates to:
+  /// **'4×2 Dashboard'**
+  String get homeWidget4x2Title;
+
+  /// No description provided for @homeWidget4x2Desc.
+  ///
+  /// In en, this message translates to:
+  /// **'Live traffic chart, connection status, uptime, and proxy control.'**
+  String get homeWidget4x2Desc;
+
+  /// No description provided for @homeWidget4x1Title.
+  ///
+  /// In en, this message translates to:
+  /// **'4×1 Compact Bar'**
+  String get homeWidget4x1Title;
+
+  /// No description provided for @homeWidget4x1Desc.
+  ///
+  /// In en, this message translates to:
+  /// **'Single-row quick toggle, live speed, and proxy selector.'**
+  String get homeWidget4x1Desc;
+
+  /// No description provided for @homeWidgetPinRequested.
+  ///
+  /// In en, this message translates to:
+  /// **'Widget request sent to your home screen'**
+  String get homeWidgetPinRequested;
+
+  /// No description provided for @homeWidgetPinUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'This launcher does not support in-app pinning. Add it manually from Android widgets on your home screen.'**
+  String get homeWidgetPinUnsupported;
 }
 
 class _AppLocalizationsDelegate

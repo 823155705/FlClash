@@ -2,12 +2,14 @@ import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/l10n/l10n.dart';
 import 'package:fl_clash/models/models.dart';
+import 'package:fl_clash/plugins/widget.dart';
 import 'package:fl_clash/providers/providers.dart';
 import 'package:fl_clash/ui/icons/icons.dart';
 import 'package:fl_clash/views/about.dart';
 import 'package:fl_clash/views/access.dart';
 import 'package:fl_clash/views/backup_and_restore.dart';
 import 'package:fl_clash/views/config/general.dart';
+import 'package:fl_clash/views/home_widgets.dart';
 import 'package:fl_clash/views/hotkey.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/widgets.dart';
@@ -19,7 +21,10 @@ import 'disclaimer.dart';
 import 'theme.dart';
 
 class ToolsView extends ConsumerStatefulWidget {
-  const ToolsView({super.key});
+  const ToolsView({super.key, this.isAndroid, this.widgetChannel});
+
+  final bool? isAndroid;
+  final WidgetChannel? widgetChannel;
 
   @override
   ConsumerState<ToolsView> createState() => _ToolViewState();
@@ -60,14 +65,16 @@ class _ToolViewState extends ConsumerState<ToolsView> {
     );
   }
 
-  Widget _getSettingList() {
+  Widget _getSettingList({required bool isAndroid, required bool safeMode}) {
     return generateSection(
       title: context.appLocalizations.settings,
       items: [
         const _LocaleItem(),
         const _ThemeItem(),
         if (system.isDesktop) const _HotkeyItem(),
-        if (system.isAndroid) const _AccessItem(),
+        if (isAndroid) const _AccessItem(),
+        if (isAndroid && !safeMode)
+          _HomeWidgetsItem(channel: widget.widgetChannel ?? widgetChannel),
         const _BackupItem(),
         const _AdvancedConfigItem(),
         const _GeneralItem(),
@@ -77,6 +84,8 @@ class _ToolViewState extends ConsumerState<ToolsView> {
 
   @override
   Widget build(BuildContext context) {
+    final isAndroid = widget.isAndroid ?? system.isAndroid;
+    final safeMode = ref.watch(safeModeProvider);
     final developerMode = ref.watch(
       appSettingProvider.select((state) => state.developerMode),
     );
@@ -92,7 +101,7 @@ class _ToolViewState extends ConsumerState<ToolsView> {
           );
         },
       ),
-      _getSettingList(),
+      _getSettingList(isAndroid: isAndroid, safeMode: safeMode),
       _getOtherList(developerMode),
     ];
     return Scaffold(
@@ -196,6 +205,24 @@ class _AccessItem extends StatelessWidget {
       leading: const GlyphIcon(AppGlyphs.appsList),
       title: Text(context.appLocalizations.accessControl),
       widget: const AccessView(),
+    );
+  }
+}
+
+class _HomeWidgetsItem extends StatelessWidget {
+  const _HomeWidgetsItem({required this.channel});
+
+  final WidgetChannel? channel;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListItem(
+      leading: const GlyphIcon(AppGlyphs.dashboard),
+      title: Text(context.appLocalizations.homeWidgets),
+      trailing: const GlyphIcon(AppGlyphs.chevronForward),
+      onTap: () {
+        showHomeWidgetsSheet(context, channel: channel);
+      },
     );
   }
 }

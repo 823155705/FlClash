@@ -4011,4 +4011,40 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get openApp => 'Открыть FlClash';
+
+  @override
+  String get homeWidgets => 'Виджеты рабочего стола';
+
+  @override
+  String get homeWidgetsDesc =>
+      'Нажмите на размер виджета, чтобы добавить его на рабочий стол.';
+
+  @override
+  String get homeWidget2x2Title => '2×2 Мини-панель';
+
+  @override
+  String get homeWidget2x2Desc =>
+      'Быстрый переключатель, скорость, режим и выбор узла.';
+
+  @override
+  String get homeWidget4x2Title => '4×2 Панель';
+
+  @override
+  String get homeWidget4x2Desc =>
+      'График трафика, статус, время работы и выбор узла.';
+
+  @override
+  String get homeWidget4x1Title => '4×1 Компактная панель';
+
+  @override
+  String get homeWidget4x1Desc =>
+      'Компактная строка с переключателем, скоростью и выбором узла.';
+
+  @override
+  String get homeWidgetPinRequested =>
+      'Запрос на добавление виджета отправлен на рабочий стол';
+
+  @override
+  String get homeWidgetPinUnsupported =>
+      'Текущий лаунчер не поддерживает добавление из приложения. Добавьте виджет вручную в разделе виджетов Android на рабочем столе.';
 }

@@ -3786,4 +3786,34 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get openApp => '打开 FlClash';
+
+  @override
+  String get homeWidgets => '桌面小组件';
+
+  @override
+  String get homeWidgetsDesc => '点击下方尺寸即可一键添加到桌面。';
+
+  @override
+  String get homeWidget2x2Title => '2×2 迷你仪表盘';
+
+  @override
+  String get homeWidget2x2Desc => '快捷开关、实时网速、出站模式与节点切换。';
+
+  @override
+  String get homeWidget4x2Title => '4×2 仪表盘';
+
+  @override
+  String get homeWidget4x2Desc => '实时流量曲线、连接状态、运行时长与节点切换。';
+
+  @override
+  String get homeWidget4x1Title => '4×1 紧凑控制条';
+
+  @override
+  String get homeWidget4x1Desc => '紧凑单行开关、实时网速与快捷节点切换。';
+
+  @override
+  String get homeWidgetPinRequested => '已发送添加请求到桌面';
+
+  @override
+  String get homeWidgetPinUnsupported => '当前桌面不支持应用内直接添加，请前往桌面「安卓小部件」手动添加。';
 }

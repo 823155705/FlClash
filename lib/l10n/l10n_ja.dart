@@ -3836,4 +3836,35 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get openApp => 'FlClash を開く';
+
+  @override
+  String get homeWidgets => 'ホーム画面ウィジェット';
+
+  @override
+  String get homeWidgetsDesc => 'ウィジェットのサイズをタップしてホーム画面に追加します。';
+
+  @override
+  String get homeWidget2x2Title => '2×2 ミニダッシュボード';
+
+  @override
+  String get homeWidget2x2Desc => 'クイック切替、リアルタイム速度、モードとノード操作。';
+
+  @override
+  String get homeWidget4x2Title => '4×2 ダッシュボード';
+
+  @override
+  String get homeWidget4x2Desc => 'リアルタイム通信グラフ、接続状態、稼働時間とノード操作。';
+
+  @override
+  String get homeWidget4x1Title => '4×1 コンパクトバー';
+
+  @override
+  String get homeWidget4x1Desc => '1行のクイック切替、リアルタイム速度とノード選択。';
+
+  @override
+  String get homeWidgetPinRequested => 'ホーム画面への追加リクエストを送信しました';
+
+  @override
+  String get homeWidgetPinUnsupported =>
+      'このランチャーはアプリ内からの追加に対応していません。ホーム画面の「Android ウィジェット」から手動で追加してください。';
 }

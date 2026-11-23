@@ -94,6 +94,40 @@ void main() {
     });
   });
 
+  test(
+    'planBuild writes APP_ENV and raw APP_BUILD_NUMBER to env.json',
+    () async {
+      final temp = Directory.systemTemp.createTempSync('package_env_test');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      final context = PackageContext(
+        root: temp.path,
+        os: ReleaseOs.android,
+        arch: ReleaseArch.universal,
+        line: ReleaseLine.dev,
+        version: '0.9.4+2026112301',
+        channel: 'stable',
+        commit: '394f5bb82a524db3838aa441a8a348d038666ad7',
+        pubspecVersion: '0.9.4+2026112301',
+        description: 'A proxy client.',
+        outputDirectory: p.join(temp.path, 'dist'),
+      );
+      final steps = package.planBuild(
+        context,
+        env: 'stable',
+        androidArches: const [ReleaseArch.arm64],
+        verbose: false,
+      );
+
+      await steps.first.run(verbose: false);
+
+      final written =
+          jsonDecode(File(p.join(temp.path, 'env.json')).readAsStringSync())
+              as Map<String, dynamic>;
+      expect(written['APP_ENV'], 'stable');
+      expect(written['APP_BUILD_NUMBER'], '2026112301');
+    },
+  );
+
   test('refuses to package while a native build hook is skipped', () {
     const pubspec = '''
 hooks:

@@ -1271,5 +1271,15 @@
   "tapToStart": "Tap to start",
   "selectNode": "Select node",
   "noNodesAvailable": "No nodes available",
-  "openApp": "Open FlClash"
+  "openApp": "Open FlClash",
+  "homeWidgets": "Home screen widgets",
+  "homeWidgetsDesc": "Tap a widget size to pin it to your home screen.",
+  "homeWidget2x2Title": "2×2 Mini Dashboard",
+  "homeWidget2x2Desc": "Quick toggle, live speed, outbound mode, and proxy control.",
+  "homeWidget4x2Title": "4×2 Dashboard",
+  "homeWidget4x2Desc": "Live traffic chart, connection status, uptime, and proxy control.",
+  "homeWidget4x1Title": "4×1 Compact Bar",
+  "homeWidget4x1Desc": "Single-row quick toggle, live speed, and proxy selector.",
+  "homeWidgetPinRequested": "Widget request sent to your home screen",
+  "homeWidgetPinUnsupported": "This launcher does not support in-app pinning. Add it manually from Android widgets on your home screen."
 }

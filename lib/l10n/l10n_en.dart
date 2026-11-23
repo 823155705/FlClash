@@ -4016,4 +4016,40 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get openApp => 'Open FlClash';
+
+  @override
+  String get homeWidgets => 'Home screen widgets';
+
+  @override
+  String get homeWidgetsDesc =>
+      'Tap a widget size to pin it to your home screen.';
+
+  @override
+  String get homeWidget2x2Title => '2×2 Mini Dashboard';
+
+  @override
+  String get homeWidget2x2Desc =>
+      'Quick toggle, live speed, outbound mode, and proxy control.';
+
+  @override
+  String get homeWidget4x2Title => '4×2 Dashboard';
+
+  @override
+  String get homeWidget4x2Desc =>
+      'Live traffic chart, connection status, uptime, and proxy control.';
+
+  @override
+  String get homeWidget4x1Title => '4×1 Compact Bar';
+
+  @override
+  String get homeWidget4x1Desc =>
+      'Single-row quick toggle, live speed, and proxy selector.';
+
+  @override
+  String get homeWidgetPinRequested =>
+      'Widget request sent to your home screen';
+
+  @override
+  String get homeWidgetPinUnsupported =>
+      'This launcher does not support in-app pinning. Add it manually from Android widgets on your home screen.';
 }
