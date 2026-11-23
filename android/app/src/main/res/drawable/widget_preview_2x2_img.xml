@@ -19,28 +19,28 @@
         </shape>
     </item>
     <item
-        android:width="40dp"
-        android:height="40dp"
+        android:width="38dp"
+        android:height="38dp"
         android:right="12dp"
-        android:top="16dp"
+        android:top="12dp"
         android:gravity="end|top">
         <shape android:shape="oval">
             <solid android:color="@color/widget_primary" />
         </shape>
     </item>
     <item
-        android:width="82dp"
-        android:height="12dp"
+        android:width="132dp"
+        android:height="46dp"
         android:left="12dp"
-        android:top="52dp">
+        android:top="57dp">
         <shape android:shape="rectangle">
-            <solid android:color="@color/widget_surface_inset" />
-            <corners android:radius="6dp" />
+            <solid android:color="@color/widget_surface_block" />
+            <corners android:radius="14dp" />
         </shape>
     </item>
     <item
-        android:width="52dp"
-        android:height="38dp"
+        android:width="50dp"
+        android:height="34dp"
         android:bottom="12dp"
         android:left="12dp"
         android:gravity="start|bottom">
@@ -50,8 +50,8 @@
         </shape>
     </item>
     <item
-        android:width="74dp"
-        android:height="38dp"
+        android:width="76dp"
+        android:height="34dp"
         android:bottom="12dp"
         android:right="12dp"
         android:gravity="end|bottom">

@@ -187,7 +187,32 @@ class WidgetCoordinatorTest {
             snapshot = base.copy(mode = "rule"),
             traffic = Traffic(up = 1024L, down = 2048L),
         ) { it }
-        assertEquals("↓2.0K ↑1.0K", compactRunning.primaryLine)
+        assertTrue(WidgetKind.COMPACT_2X2.hasTrafficCard)
+        assertTrue(WidgetKind.WIDE_4X2.hasTrafficCard)
+        assertFalse(WidgetKind.BAR_4X1.hasTrafficCard)
+        assertTrue(compactRunning.canSelectProxy)
+        assertEquals("↓ 2.0 KB/s", compactRunning.primaryLine)
+        assertEquals("↑ 1.0 KB/s", compactRunning.secondaryLine)
+        assertEquals("HK-01", compactRunning.nodeLabel)
+
+        val compactStopped = WidgetDisplayReducer.reduce(
+            kind = WidgetKind.COMPACT_2X2,
+            runState = RunState.STOPPED,
+            snapshot = base.copy(mode = "rule"),
+            traffic = Traffic(0L, 0L),
+        ) { key -> if (key == "tapToStart") "Tap to start" else key }
+        assertEquals("Sub", compactStopped.primaryLine)
+        assertEquals("Tap to start", compactStopped.secondaryLine)
+        assertTrue(compactStopped.canSelectProxy)
+
+        val compactStoppedNoName = WidgetDisplayReducer.reduce(
+            kind = WidgetKind.COMPACT_2X2,
+            runState = RunState.STOPPED,
+            snapshot = base.copy(mode = "rule", profileName = ""),
+            traffic = Traffic(0L, 0L),
+        ) { key -> if (key == "tapToStart") "Tap to start" else key }
+        assertEquals("Tap to start", compactStoppedNoName.primaryLine)
+        assertEquals("", compactStoppedNoName.secondaryLine)
 
         val noProfileFallback: (String) -> String = { key ->
             when (key) {
@@ -228,9 +253,49 @@ class WidgetCoordinatorTest {
             traffic = Traffic(0L, 0L),
             fallbackLabel = noProfileFallback,
         )
+        assertFalse(noProfile2x2.canSelectProxy)
         assertEquals("No profile", noProfile2x2.statusLabel)
         assertEquals("Open FlClash", noProfile2x2.primaryLine)
+        assertEquals("FlClash", noProfile2x2.secondaryLine)
         assertEquals("—", noProfile2x2.nodeLabel)
+    }
+
+    @Test
+    fun `chart renderer skips empty, single-sample, zero-peak, or invalid bounds`() {
+        assertEquals(null, WidgetChartRenderer.render(emptyList(), 0xFF007AFF.toInt(), 0xFF84B9F7.toInt(), false))
+        assertEquals(
+            null,
+            WidgetChartRenderer.render(
+                listOf(Traffic(up = 100L, down = 200L)),
+                0xFF007AFF.toInt(),
+                0xFF84B9F7.toInt(),
+                false,
+                width = WidgetChartRenderer.COMPACT_WIDTH,
+                height = WidgetChartRenderer.COMPACT_HEIGHT,
+            ),
+        )
+        assertEquals(
+            null,
+            WidgetChartRenderer.render(
+                listOf(Traffic(0L, 0L), Traffic(0L, 0L)),
+                0xFF007AFF.toInt(),
+                0xFF84B9F7.toInt(),
+                true,
+                width = WidgetChartRenderer.COMPACT_WIDTH,
+                height = WidgetChartRenderer.COMPACT_HEIGHT,
+            ),
+        )
+        assertEquals(
+            null,
+            WidgetChartRenderer.render(
+                listOf(Traffic(100L, 200L), Traffic(300L, 400L)),
+                0xFF007AFF.toInt(),
+                0xFF84B9F7.toInt(),
+                false,
+                width = 0,
+                height = WidgetChartRenderer.COMPACT_HEIGHT,
+            ),
+        )
     }
 
     @Test

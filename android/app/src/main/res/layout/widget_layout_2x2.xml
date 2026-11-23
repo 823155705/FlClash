@@ -12,137 +12,165 @@
     tools:targetApi="s">
 
     <LinearLayout
-        android:id="@+id/widget_open_app"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clickable="true"
-        android:focusable="true"
-        android:orientation="vertical">
+        android:layout_height="38dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
         <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
+            android:id="@+id/widget_open_app"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="6dp"
+            android:layout_weight="1"
+            android:clickable="true"
+            android:focusable="true"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <LinearLayout
-                    android:id="@+id/widget_status_badge"
-                    android:layout_width="wrap_content"
-                    android:layout_height="24dp"
-                    android:background="@drawable/widget_bg_status_idle"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:paddingHorizontal="8dp">
-
-                    <ImageView
-                        android:id="@+id/widget_status_dot"
-                        android:layout_width="6dp"
-                        android:layout_height="6dp"
-                        android:layout_marginEnd="5dp"
-                        android:importantForAccessibility="no"
-                        android:src="@drawable/ic_widget_dot"
-                        android:tint="@color/widget_text_secondary" />
-
-                    <TextView
-                        android:id="@+id/widget_status_text"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:ellipsize="end"
-                        android:includeFontPadding="false"
-                        android:maxLines="1"
-                        android:text="@string/widget_status_not_running"
-                        android:textColor="@color/widget_text_secondary"
-                        android:textSize="12sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-            </LinearLayout>
-
-            <FrameLayout
-                android:id="@+id/widget_toggle_button"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/widget_toggle_bg_idle"
-                android:clickable="true"
-                android:contentDescription="@string/widget_a11y_toggle"
-                android:focusable="true">
-
-                <ImageView
-                    android:id="@+id/widget_toggle_icon"
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:layout_gravity="center"
-                    android:importantForAccessibility="no"
-                    android:src="@drawable/ic_widget_play" />
-
-                <ProgressBar
-                    android:id="@+id/widget_toggle_progress"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:layout_gravity="center"
-                    android:indeterminate="true"
-                    android:indeterminateTint="@color/widget_primary"
-                    android:visibility="gone" />
-            </FrameLayout>
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingHorizontal="2dp">
-
             <ImageView
                 android:id="@+id/widget_glyph"
-                android:layout_width="15dp"
-                android:layout_height="15dp"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
                 android:layout_marginEnd="5dp"
                 android:importantForAccessibility="no"
                 android:src="@drawable/ic_widget_glyph_idle" />
 
+            <LinearLayout
+                android:id="@+id/widget_status_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="24dp"
+                android:background="@drawable/widget_bg_status_idle"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="7dp">
+
+                <ImageView
+                    android:id="@+id/widget_status_dot"
+                    android:layout_width="6dp"
+                    android:layout_height="6dp"
+                    android:layout_marginEnd="4dp"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_widget_dot"
+                    android:tint="@color/widget_text_secondary" />
+
+                <TextView
+                    android:id="@+id/widget_status_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="@string/widget_status_not_running"
+                    android:textColor="@color/widget_text_secondary"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <FrameLayout
+            android:id="@+id/widget_toggle_button"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:background="@drawable/widget_toggle_bg_idle"
+            android:clickable="true"
+            android:contentDescription="@string/widget_a11y_toggle"
+            android:focusable="true">
+
+            <ImageView
+                android:id="@+id/widget_toggle_icon"
+                android:layout_width="17dp"
+                android:layout_height="17dp"
+                android:layout_gravity="center"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_widget_play" />
+
+            <ProgressBar
+                android:id="@+id/widget_toggle_progress"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_gravity="center"
+                android:indeterminate="true"
+                android:indeterminateTint="@color/widget_primary"
+                android:visibility="gone" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/widget_traffic_card"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="7dp"
+        android:layout_marginBottom="7dp"
+        android:layout_weight="1"
+        android:background="@drawable/widget_bg_block"
+        android:clickable="true"
+        android:clipToOutline="true"
+        android:focusable="true">
+
+        <ImageView
+            android:id="@+id/widget_traffic_chart"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="fitXY"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="top"
+            android:orientation="vertical"
+            android:paddingHorizontal="10dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="6dp">
+
             <TextView
                 android:id="@+id/widget_speed_primary"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:ellipsize="end"
                 android:fontFeatureSettings="tnum"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:text="@string/widget_tap_to_start"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_speed_secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:fontFeatureSettings="tnum"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text=""
                 android:textColor="@color/widget_text_secondary"
-                android:textSize="11.5sp" />
+                android:textSize="11sp" />
         </LinearLayout>
-    </LinearLayout>
+    </FrameLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="38dp"
-        android:layout_marginTop="4dp"
+        android:layout_height="34dp"
         android:orientation="horizontal">
 
         <LinearLayout
             android:id="@+id/widget_mode_button"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
-            android:layout_marginEnd="5dp"
+            android:layout_marginEnd="6dp"
             android:background="@drawable/widget_bg_block"
             android:clickable="true"
             android:focusable="true"
             android:gravity="center"
             android:minWidth="44dp"
             android:orientation="horizontal"
-            android:paddingHorizontal="6dp">
+            android:paddingHorizontal="7dp">
 
             <ImageView
                 android:id="@+id/widget_mode_icon"
@@ -184,6 +212,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:text="@string/widget_preview_node"

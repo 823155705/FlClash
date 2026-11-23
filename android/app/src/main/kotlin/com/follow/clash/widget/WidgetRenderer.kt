@@ -23,10 +23,13 @@ import com.follow.clash.models.WidgetSnapshot
 import com.follow.clash.service.models.Traffic
 import java.util.Locale
 
-internal enum class WidgetKind(val layoutId: Int) {
-    COMPACT_2X2(R.layout.widget_layout_2x2),
-    WIDE_4X2(R.layout.widget_layout_4x2),
-    BAR_4X1(R.layout.widget_layout_4x1),
+internal enum class WidgetKind(
+    val layoutId: Int,
+    val hasTrafficCard: Boolean,
+) {
+    COMPACT_2X2(R.layout.widget_layout_2x2, hasTrafficCard = true),
+    WIDE_4X2(R.layout.widget_layout_4x2, hasTrafficCard = true),
+    BAR_4X1(R.layout.widget_layout_4x1, hasTrafficCard = false),
 }
 
 internal enum class WidgetVisualStatus {
@@ -152,7 +155,7 @@ internal object WidgetDisplayReducer {
         val primaryLine: String
         val secondaryLine: String
         if (status == WidgetVisualStatus.STARTED) {
-            if (kind == WidgetKind.WIDE_4X2) {
+            if (kind.hasTrafficCard) {
                 primaryLine = "↓ ${formatSpeed(traffic.down)}"
                 secondaryLine = "↑ ${formatSpeed(traffic.up)}"
             } else {
@@ -198,6 +201,7 @@ internal object WidgetRenderer {
     private const val REQUEST_TOGGLE = 101
     private const val REQUEST_CYCLE_MODE = 102
     private const val REQUEST_SELECT_PROXY = 103
+    private const val PURE_BLACK_BLOCK_COLOR = 0xFF1C1C1E.toInt()
 
     fun bind(
         context: Context,
@@ -219,14 +223,26 @@ internal object WidgetRenderer {
         ) { key -> fallbackString(context, key) }
 
         val customPrimary = if (isDark) snapshot.primaryColorDark else snapshot.primaryColorLight
-        val chartBitmap = if (kind == WidgetKind.WIDE_4X2 && model.status == WidgetVisualStatus.STARTED) {
+        val chartBitmap = if (kind.hasTrafficCard && model.status == WidgetVisualStatus.STARTED) {
             val downColor = if (customPrimary != 0) {
                 customPrimary
             } else {
                 ContextCompat.getColor(context, R.color.widget_chart_down)
             }
             val upColor = ContextCompat.getColor(context, R.color.widget_chart_up)
-            WidgetChartRenderer.render(history, downColor, upColor, isDark)
+            val (chartWidth, chartHeight) = if (kind == WidgetKind.COMPACT_2X2) {
+                WidgetChartRenderer.COMPACT_WIDTH to WidgetChartRenderer.COMPACT_HEIGHT
+            } else {
+                WidgetChartRenderer.WIDE_WIDTH to WidgetChartRenderer.WIDE_HEIGHT
+            }
+            WidgetChartRenderer.render(
+                samples = history,
+                downColor = downColor,
+                upColor = upColor,
+                isDark = isDark,
+                width = chartWidth,
+                height = chartHeight,
+            )
         } else {
             null
         }
@@ -259,15 +275,13 @@ internal object WidgetRenderer {
         val views = RemoteViews(context.packageName, kind.layoutId)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (snapshot.pureBlack) {
-                views.setColorStateList(
-                    android.R.id.background,
-                    "setBackgroundTintList",
-                    null,
-                    ColorStateList.valueOf(Color.BLACK),
-                )
-            } else {
-                views.setColorStateList(android.R.id.background, "setBackgroundTintList", null)
+            val cardTintDark = if (snapshot.pureBlack) ColorStateList.valueOf(Color.BLACK) else null
+            val blockTintDark = if (snapshot.pureBlack) ColorStateList.valueOf(PURE_BLACK_BLOCK_COLOR) else null
+            setDarkOnlyBackgroundTint(views, android.R.id.background, cardTintDark)
+            setDarkOnlyBackgroundTint(views, R.id.widget_mode_button, blockTintDark)
+            if (kind.hasTrafficCard) {
+                setDarkOnlyBackgroundTint(views, R.id.widget_traffic_card, blockTintDark)
+                setDarkOnlyBackgroundTint(views, R.id.widget_node_button, blockTintDark)
             }
         }
 
@@ -392,6 +406,8 @@ internal object WidgetRenderer {
                 if (model.showTunBadge) View.VISIBLE else View.GONE,
             )
             views.setTextViewText(R.id.widget_group_text, model.groupLabel)
+        }
+        if (kind.hasTrafficCard) {
             views.setTextViewText(R.id.widget_speed_secondary, model.secondaryLine)
             views.setViewVisibility(
                 R.id.widget_speed_secondary,
@@ -407,7 +423,7 @@ internal object WidgetRenderer {
 
         val openAppIntent = openAppPendingIntent(context)
         views.setOnClickPendingIntent(R.id.widget_open_app, openAppIntent)
-        if (kind == WidgetKind.WIDE_4X2) {
+        if (kind.hasTrafficCard) {
             views.setOnClickPendingIntent(R.id.widget_traffic_card, openAppIntent)
         }
 
@@ -477,6 +493,19 @@ internal object WidgetRenderer {
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+    }
+
+    private fun setDarkOnlyBackgroundTint(
+        views: RemoteViews,
+        viewId: Int,
+        darkTint: ColorStateList?,
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        if (darkTint != null) {
+            views.setColorStateList(viewId, "setBackgroundTintList", null, darkTint)
+        } else {
+            views.setColorStateList(viewId, "setBackgroundTintList", null)
+        }
     }
 
     private fun setTextColorRes(
