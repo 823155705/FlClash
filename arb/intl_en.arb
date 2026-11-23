@@ -1265,5 +1265,11 @@
   "clearTrafficStatisticsConfirm": "This clears all app traffic history in the selected subscription scope and cannot be undone.",
   "noAppTraffic": "No subscription proxy traffic in this range",
   "unknownApplication": "Unknown application",
-  "customBuildUpdateTip": "Updates for this custom build retain app traffic statistics."
+  "customBuildUpdateTip": "Updates for this custom build retain app traffic statistics.",
+  "stopping": "Stopping…",
+  "noProfile": "No profile",
+  "tapToStart": "Tap to start",
+  "selectNode": "Select node",
+  "noNodesAvailable": "No nodes available",
+  "openApp": "Open FlClash"
 }

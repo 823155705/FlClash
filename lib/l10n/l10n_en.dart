@@ -3998,4 +3998,22 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get customBuildUpdateTip =>
       'Updates for this custom build retain app traffic statistics.';
+
+  @override
+  String get stopping => 'Stopping…';
+
+  @override
+  String get noProfile => 'No profile';
+
+  @override
+  String get tapToStart => 'Tap to start';
+
+  @override
+  String get selectNode => 'Select node';
+
+  @override
+  String get noNodesAvailable => 'No nodes available';
+
+  @override
+  String get openApp => 'Open FlClash';
 }

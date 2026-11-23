@@ -1150,5 +1150,11 @@
   "clearTrafficStatisticsConfirm": "선택한 구독의 모든 앱 트래픽 기록을 삭제합니다. 이 작업은 취소할 수 없습니다.",
   "noAppTraffic": "이 기간에 프록시 트래픽이 없습니다",
   "unknownApplication": "알 수 없는 앱",
-  "customBuildUpdateTip": "이 사용자 지정 빌드를 업데이트해도 앱 트래픽 통계가 유지됩니다."
+  "customBuildUpdateTip": "이 사용자 지정 빌드를 업데이트해도 앱 트래픽 통계가 유지됩니다.",
+  "stopping": "중지 중…",
+  "noProfile": "프로필 없음",
+  "tapToStart": "탭하여 시작",
+  "selectNode": "노드 선택",
+  "noNodesAvailable": "사용 가능한 노드가 없습니다",
+  "openApp": "FlClash 열기"
 }

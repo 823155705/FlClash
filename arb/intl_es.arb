@@ -1150,5 +1150,11 @@
   "clearTrafficStatisticsConfirm": "Se borrará todo el historial de tráfico de aplicaciones de las suscripciones seleccionadas. Esta acción no se puede deshacer.",
   "noAppTraffic": "No hay tráfico del proxy en este período",
   "unknownApplication": "Aplicación desconocida",
-  "customBuildUpdateTip": "Las actualizaciones de esta versión conservan las estadísticas por aplicación."
+  "customBuildUpdateTip": "Las actualizaciones de esta versión conservan las estadísticas por aplicación.",
+  "stopping": "Deteniendo…",
+  "noProfile": "Sin perfil",
+  "tapToStart": "Toca para iniciar",
+  "selectNode": "Seleccionar nodo",
+  "noNodesAvailable": "No hay nodos disponibles",
+  "openApp": "Abrir FlClash"
 }

@@ -1150,5 +1150,11 @@
   "clearTrafficStatisticsConfirm": "将清除当前订阅筛选范围内的全部应用流量历史，且无法撤销。",
   "noAppTraffic": "当前范围暂无订阅代理流量",
   "unknownApplication": "未知应用",
-  "customBuildUpdateTip": "此定制版的更新会保留应用流量统计功能。"
+  "customBuildUpdateTip": "此定制版的更新会保留应用流量统计功能。",
+  "stopping": "停止中…",
+  "noProfile": "无配置",
+  "tapToStart": "点击启动",
+  "selectNode": "选择节点",
+  "noNodesAvailable": "暂无可用节点",
+  "openApp": "打开 FlClash"
 }

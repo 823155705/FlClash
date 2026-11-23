@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="widget_corner_card">24dp</dimen>
+    <dimen name="widget_corner_block">14dp</dimen>
+    <dimen name="widget_padding_card">10dp</dimen>
+</resources>

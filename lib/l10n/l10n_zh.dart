@@ -3768,4 +3768,22 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get customBuildUpdateTip => '此定制版的更新会保留应用流量统计功能。';
+
+  @override
+  String get stopping => '停止中…';
+
+  @override
+  String get noProfile => '无配置';
+
+  @override
+  String get tapToStart => '点击启动';
+
+  @override
+  String get selectNode => '选择节点';
+
+  @override
+  String get noNodesAvailable => '暂无可用节点';
+
+  @override
+  String get openApp => '打开 FlClash';
 }

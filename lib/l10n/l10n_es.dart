@@ -4040,4 +4040,22 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get customBuildUpdateTip =>
       'Las actualizaciones de esta versión conservan las estadísticas por aplicación.';
+
+  @override
+  String get stopping => 'Deteniendo…';
+
+  @override
+  String get noProfile => 'Sin perfil';
+
+  @override
+  String get tapToStart => 'Toca para iniciar';
+
+  @override
+  String get selectNode => 'Seleccionar nodo';
+
+  @override
+  String get noNodesAvailable => 'No hay nodos disponibles';
+
+  @override
+  String get openApp => 'Abrir FlClash';
 }

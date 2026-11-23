@@ -1150,5 +1150,11 @@
   "clearTrafficStatisticsConfirm": "Tout l’historique du trafic des applications des abonnements sélectionnés sera supprimé. Cette action est irréversible.",
   "noAppTraffic": "Aucun trafic proxy sur cette période",
   "unknownApplication": "Application inconnue",
-  "customBuildUpdateTip": "Les mises à jour de cette version conservent les statistiques par application."
+  "customBuildUpdateTip": "Les mises à jour de cette version conservent les statistiques par application.",
+  "stopping": "Arrêt…",
+  "noProfile": "Aucun profil",
+  "tapToStart": "Appuyez pour démarrer",
+  "selectNode": "Sélectionner un nœud",
+  "noNodesAvailable": "Aucun nœud disponible",
+  "openApp": "Ouvrir FlClash"
 }

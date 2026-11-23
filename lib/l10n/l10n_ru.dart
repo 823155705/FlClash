@@ -3993,4 +3993,22 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String get customBuildUpdateTip =>
       'Обновления этой сборки сохраняют статистику трафика приложений.';
+
+  @override
+  String get stopping => 'Остановка…';
+
+  @override
+  String get noProfile => 'Нет профиля';
+
+  @override
+  String get tapToStart => 'Нажмите для запуска';
+
+  @override
+  String get selectNode => 'Выберите узел';
+
+  @override
+  String get noNodesAvailable => 'Нет доступных узлов';
+
+  @override
+  String get openApp => 'Открыть FlClash';
 }

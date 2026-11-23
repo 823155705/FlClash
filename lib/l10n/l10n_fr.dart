@@ -4045,4 +4045,22 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get customBuildUpdateTip =>
       'Les mises à jour de cette version conservent les statistiques par application.';
+
+  @override
+  String get stopping => 'Arrêt…';
+
+  @override
+  String get noProfile => 'Aucun profil';
+
+  @override
+  String get tapToStart => 'Appuyez pour démarrer';
+
+  @override
+  String get selectNode => 'Sélectionner un nœud';
+
+  @override
+  String get noNodesAvailable => 'Aucun nœud disponible';
+
+  @override
+  String get openApp => 'Ouvrir FlClash';
 }

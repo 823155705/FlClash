@@ -3893,4 +3893,22 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get customBuildUpdateTip => '이 사용자 지정 빌드를 업데이트해도 앱 트래픽 통계가 유지됩니다.';
+
+  @override
+  String get stopping => '중지 중…';
+
+  @override
+  String get noProfile => '프로필 없음';
+
+  @override
+  String get tapToStart => '탭하여 시작';
+
+  @override
+  String get selectNode => '노드 선택';
+
+  @override
+  String get noNodesAvailable => '사용 가능한 노드가 없습니다';
+
+  @override
+  String get openApp => 'FlClash 열기';
 }

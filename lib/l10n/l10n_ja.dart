@@ -3818,4 +3818,22 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get customBuildUpdateTip => 'このカスタムビルドの更新ではアプリ通信量統計が保持されます。';
+
+  @override
+  String get stopping => '停止中…';
+
+  @override
+  String get noProfile => 'プロファイルなし';
+
+  @override
+  String get tapToStart => 'タップして開始';
+
+  @override
+  String get selectNode => 'ノードを選択';
+
+  @override
+  String get noNodesAvailable => '利用可能なノードがありません';
+
+  @override
+  String get openApp => 'FlClash を開く';
 }

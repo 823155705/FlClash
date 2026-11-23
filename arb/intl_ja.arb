@@ -1150,5 +1150,11 @@
   "clearTrafficStatisticsConfirm": "選択したサブスクリプション範囲のアプリ通信量履歴をすべて消去します。この操作は元に戻せません。",
   "noAppTraffic": "この範囲にはサブスクリプションプロキシ通信量がありません",
   "unknownApplication": "不明なアプリ",
-  "customBuildUpdateTip": "このカスタムビルドの更新ではアプリ通信量統計が保持されます。"
+  "customBuildUpdateTip": "このカスタムビルドの更新ではアプリ通信量統計が保持されます。",
+  "stopping": "停止中…",
+  "noProfile": "プロファイルなし",
+  "tapToStart": "タップして開始",
+  "selectNode": "ノードを選択",
+  "noNodesAvailable": "利用可能なノードがありません",
+  "openApp": "FlClash を開く"
 }
