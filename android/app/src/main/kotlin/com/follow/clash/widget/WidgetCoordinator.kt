@@ -10,6 +10,7 @@ import android.content.res.Configuration
 import android.os.PowerManager
 import androidx.core.content.getSystemService
 import com.follow.clash.RunState
+import com.follow.clash.ServiceController
 import com.follow.clash.ServiceState
 import com.follow.clash.common.GlobalState
 import com.follow.clash.common.receiveBroadcastFlow
@@ -48,6 +49,8 @@ internal interface WidgetCoordinatorHost {
 
     fun readTraffic(): Traffic
 
+    fun readStartedAtMillis(): Long
+
     fun fallbackSnapshot(): WidgetSnapshot
 
     fun renderAll(
@@ -55,6 +58,7 @@ internal interface WidgetCoordinatorHost {
         snapshot: WidgetSnapshot,
         traffic: Traffic,
         history: List<Traffic>,
+        startedAtMillis: Long,
     )
 
     fun renderKind(
@@ -64,6 +68,7 @@ internal interface WidgetCoordinatorHost {
         snapshot: WidgetSnapshot,
         traffic: Traffic,
         history: List<Traffic>,
+        startedAtMillis: Long,
     )
 
     fun onWidgetsActiveChanged(active: Boolean)
@@ -100,16 +105,28 @@ internal class WidgetCoordinatorEngine(
                 }.collectLatest { (runState, snapshot, screenOn) ->
                     if (runState != RunState.STARTED) {
                         clearHistory()
-                        host.renderAll(runState, snapshot, ZERO_TRAFFIC, emptyList())
+                        host.renderAll(runState, snapshot, ZERO_TRAFFIC, emptyList(), 0L)
                         return@collectLatest
                     }
                     val current = if (screenOn) recordSample(host.readTraffic()) else ZERO_TRAFFIC
-                    host.renderAll(runState, snapshot, current, copyHistory())
+                    host.renderAll(
+                        runState,
+                        snapshot,
+                        current,
+                        copyHistory(),
+                        host.readStartedAtMillis(),
+                    )
                     if (!screenOn) return@collectLatest
                     while (true) {
                         delay(pollIntervalMillis)
                         val sample = recordSample(host.readTraffic())
-                        host.renderAll(runState, snapshot, sample, copyHistory())
+                        host.renderAll(
+                            runState,
+                            snapshot,
+                            sample,
+                            copyHistory(),
+                            host.readStartedAtMillis(),
+                        )
                     }
                 }
             }
@@ -158,7 +175,8 @@ internal class WidgetCoordinatorEngine(
             ZERO_TRAFFIC
         }
         val history = if (runState == RunState.STARTED) copyHistory() else emptyList()
-        host.renderKind(kind, widgetIds, runState, snapshot, traffic, history)
+        val startedAt = if (runState == RunState.STARTED) host.readStartedAtMillis() else 0L
+        host.renderKind(kind, widgetIds, runState, snapshot, traffic, history, startedAt)
     }
 
     fun refreshNow() {
@@ -174,7 +192,14 @@ internal class WidgetCoordinatorEngine(
         } else {
             ZERO_TRAFFIC
         }
-        host.renderAll(runState, snapshot, traffic, if (runState == RunState.STARTED) copyHistory() else emptyList())
+        val startedAt = if (runState == RunState.STARTED) host.readStartedAtMillis() else 0L
+        host.renderAll(
+            runState,
+            snapshot,
+            traffic,
+            if (runState == RunState.STARTED) copyHistory() else emptyList(),
+            startedAt,
+        )
     }
 
     private fun resolveEffectiveSnapshot(): WidgetSnapshot =
@@ -386,6 +411,8 @@ private class AndroidWidgetCoordinatorHost(
         gson.fromJson(Core.getTraffic(onlyProxy), Traffic::class.java)
     }.getOrNull() ?: WidgetCoordinatorEngine.ZERO_TRAFFIC
 
+    override fun readStartedAtMillis(): Long = ServiceController.runtime?.startedAtMillis ?: 0L
+
     override fun fallbackSnapshot(): WidgetSnapshot {
         val shared = runCatching { (context as? Application)?.sharedState }.getOrNull()
             ?: return WidgetSnapshot()
@@ -401,6 +428,7 @@ private class AndroidWidgetCoordinatorHost(
         snapshot: WidgetSnapshot,
         traffic: Traffic,
         history: List<Traffic>,
+        startedAtMillis: Long,
     ) {
         val manager = AppWidgetManager.getInstance(context)
         for ((kind, cls) in PROVIDERS) {
@@ -415,6 +443,7 @@ private class AndroidWidgetCoordinatorHost(
                 snapshot = snapshot,
                 traffic = traffic,
                 history = history,
+                startedAtMillis = startedAtMillis,
             )
         }
     }
@@ -426,6 +455,7 @@ private class AndroidWidgetCoordinatorHost(
         snapshot: WidgetSnapshot,
         traffic: Traffic,
         history: List<Traffic>,
+        startedAtMillis: Long,
     ) {
         val manager = AppWidgetManager.getInstance(context)
         WidgetRenderer.bind(
@@ -437,6 +467,7 @@ private class AndroidWidgetCoordinatorHost(
             snapshot = snapshot,
             traffic = traffic,
             history = history,
+            startedAtMillis = startedAtMillis,
         )
     }
 

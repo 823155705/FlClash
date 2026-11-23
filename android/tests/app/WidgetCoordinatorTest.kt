@@ -14,6 +14,8 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -22,6 +24,7 @@ private data class RenderRecord(
     val snapshot: WidgetSnapshot,
     val traffic: Traffic,
     val historySize: Int,
+    val startedAtMillis: Long,
 )
 
 private class FakeCoordinatorHost(
@@ -34,6 +37,7 @@ private class FakeCoordinatorHost(
     var active = initialActive
     var fallback = WidgetSnapshot()
     var nextTraffic = Traffic(up = 1024L, down = 2048L)
+    var startedAtMillis = 1_700_000_000_000L
 
     var trafficReads = 0
     var screenSubscriptions = 0
@@ -58,6 +62,8 @@ private class FakeCoordinatorHost(
         return nextTraffic
     }
 
+    override fun readStartedAtMillis(): Long = startedAtMillis
+
     override fun fallbackSnapshot(): WidgetSnapshot = fallback
 
     override fun renderAll(
@@ -65,8 +71,9 @@ private class FakeCoordinatorHost(
         snapshot: WidgetSnapshot,
         traffic: Traffic,
         history: List<Traffic>,
+        startedAtMillis: Long,
     ) {
-        renders += RenderRecord(runState, snapshot, traffic, history.size)
+        renders += RenderRecord(runState, snapshot, traffic, history.size, startedAtMillis)
     }
 
     override fun renderKind(
@@ -76,6 +83,7 @@ private class FakeCoordinatorHost(
         snapshot: WidgetSnapshot,
         traffic: Traffic,
         history: List<Traffic>,
+        startedAtMillis: Long,
     ) {
         kindRenders += kind to widgetIds.toList()
     }
@@ -146,6 +154,147 @@ class WidgetCoordinatorTest {
         assertEquals("1.5K", WidgetDisplayReducer.formatSpeedCompact(1536L))
         assertEquals("2.0M", WidgetDisplayReducer.formatSpeedCompact(2L * 1024L * 1024L))
         assertEquals("1.0G", WidgetDisplayReducer.formatSpeedCompact(1024L * 1024L * 1024L))
+    }
+
+    @Test
+    fun `speed parts split numeric value and unit for full and compact layouts`() {
+        assertEquals(SpeedParts("0", "B/s"), WidgetDisplayReducer.formatSpeedParts(-1L))
+        assertEquals(SpeedParts("512", "B/s"), WidgetDisplayReducer.formatSpeedParts(512L))
+        assertEquals(SpeedParts("1.5", "KB/s"), WidgetDisplayReducer.formatSpeedParts(1536L))
+        assertEquals(
+            SpeedParts("12.4", "MB/s"),
+            WidgetDisplayReducer.formatSpeedParts((12.4 * 1024 * 1024).toLong()),
+        )
+
+        assertEquals(SpeedParts("0", "B"), WidgetDisplayReducer.formatSpeedCompactParts(-1L))
+        assertEquals(SpeedParts("512", "B"), WidgetDisplayReducer.formatSpeedCompactParts(512L))
+        assertEquals(SpeedParts("1.5", "K"), WidgetDisplayReducer.formatSpeedCompactParts(1536L))
+        assertEquals(
+            SpeedParts("12.4", "M"),
+            WidgetDisplayReducer.formatSpeedCompactParts((12.4 * 1024 * 1024).toLong()),
+        )
+
+        val snapshot = WidgetSnapshot(hasProfile = true, mode = "rule", nodeName = "HK-01")
+        val traffic = Traffic(up = 1536L, down = 2L * 1024L * 1024L)
+        val wide = WidgetDisplayReducer.reduce(WidgetKind.WIDE_4X2, RunState.STARTED, snapshot, traffic) { it }
+        assertEquals(SpeedParts("2.0", "MB/s"), wide.downParts)
+        assertEquals(SpeedParts("1.5", "KB/s"), wide.upParts)
+
+        val compact = WidgetDisplayReducer.reduce(WidgetKind.COMPACT_2X2, RunState.STARTED, snapshot, traffic) { it }
+        assertEquals(SpeedParts("2.0", "MB/s"), compact.downParts)
+        assertEquals(SpeedParts("1.5", "KB/s"), compact.upParts)
+
+        val bar = WidgetDisplayReducer.reduce(WidgetKind.BAR_4X1, RunState.STARTED, snapshot, traffic) { it }
+        assertEquals(SpeedParts("2.0", "M"), bar.downParts)
+        assertEquals(SpeedParts("1.5", "K"), bar.upParts)
+    }
+
+    @Test
+    fun `spark bars hide when idle and normalize last four samples with breathing floor`() {
+        assertNull(WidgetChartRenderer.computeSparkBarRatios(emptyList()))
+        assertNull(WidgetChartRenderer.computeSparkBarRatios(listOf(Traffic(0L, 0L), Traffic(0L, 0L))))
+        assertNull(
+            WidgetChartRenderer.computeSparkBarRatios(
+                listOf(
+                    Traffic(up = 500L, down = 1000L),
+                    Traffic(0L, 0L),
+                    Traffic(0L, 0L),
+                    Traffic(0L, 0L),
+                    Traffic(0L, 0L),
+                ),
+            ),
+        )
+        assertNull(
+            WidgetChartRenderer.renderSparkBars(
+                listOf(Traffic(100L, 200L)),
+                0xFF007AFF.toInt(),
+                0xFF76ADF2.toInt(),
+                false,
+                width = 0,
+                height = WidgetChartRenderer.SPARK_BARS_HEIGHT,
+            ),
+        )
+
+        val single = WidgetChartRenderer.computeSparkBarRatios(listOf(Traffic(up = 200L, down = 800L)))
+        assertNotNull(single)
+        assertEquals(4, single!!.size)
+        assertEquals(0.25f, single[0], 0.001f)
+        assertEquals(0.25f, single[1], 0.001f)
+        assertEquals(0.25f, single[2], 0.001f)
+        assertEquals(1.0f, single[3], 0.001f)
+
+        val history = listOf(
+            Traffic(up = 0L, down = 1000L),
+            Traffic(up = 0L, down = 0L),
+            Traffic(up = 100L, down = 150L),
+            Traffic(up = 250L, down = 250L),
+            Traffic(up = 200L, down = 800L),
+        )
+        val ratios = WidgetChartRenderer.computeSparkBarRatios(history)!!
+        assertEquals(4, ratios.size)
+        assertEquals(0.25f, ratios[0], 0.001f)
+        assertEquals(0.4375f, ratios[1], 0.001f)
+        assertEquals(0.625f, ratios[2], 0.001f)
+        assertEquals(1.0f, ratios[3], 0.001f)
+    }
+
+    @Test
+    fun `chronometer base converts wall time to elapsed realtime and header adapts to width`() {
+        assertNull(WidgetDisplayReducer.computeChronometerBase(0L, 1_700_000_065_000L, 500_000L))
+        assertNull(WidgetDisplayReducer.computeChronometerBase(-10L, 1_700_000_065_000L, 500_000L))
+        assertEquals(
+            435_000L,
+            WidgetDisplayReducer.computeChronometerBase(
+                startedAtWallMillis = 1_700_000_000_000L,
+                nowWallMillis = 1_700_000_065_000L,
+                nowElapsedRealtimeMillis = 500_000L,
+            ),
+        )
+        assertEquals(
+            500_000L,
+            WidgetDisplayReducer.computeChronometerBase(
+                startedAtWallMillis = 1_700_000_100_000L,
+                nowWallMillis = 1_700_000_065_000L,
+                nowElapsedRealtimeMillis = 500_000L,
+            ),
+        )
+
+        assertEquals(
+            WideHeaderVisibility(showChronometer = false, showTunBadge = false),
+            WidgetDisplayReducer.resolveWideHeaderVisibility(
+                isRunning = false,
+                hasChronometerBase = true,
+                tunEnabled = true,
+                widthDp = 412,
+            ),
+        )
+        assertEquals(
+            WideHeaderVisibility(showChronometer = false, showTunBadge = false),
+            WidgetDisplayReducer.resolveWideHeaderVisibility(
+                isRunning = true,
+                hasChronometerBase = true,
+                tunEnabled = true,
+                widthDp = 250,
+            ),
+        )
+        assertEquals(
+            WideHeaderVisibility(showChronometer = true, showTunBadge = false),
+            WidgetDisplayReducer.resolveWideHeaderVisibility(
+                isRunning = true,
+                hasChronometerBase = true,
+                tunEnabled = true,
+                widthDp = 290,
+            ),
+        )
+        assertEquals(
+            WideHeaderVisibility(showChronometer = true, showTunBadge = true),
+            WidgetDisplayReducer.resolveWideHeaderVisibility(
+                isRunning = true,
+                hasChronometerBase = true,
+                tunEnabled = true,
+                widthDp = 412,
+            ),
+        )
     }
 
     @Test
@@ -336,6 +485,7 @@ class WidgetCoordinatorTest {
         runCurrent()
         assertEquals(1, host.renders.size)
         assertEquals(0, host.trafficReads)
+        assertEquals(0L, host.renders.last().startedAtMillis)
 
         advanceTimeBy(6_000L)
         runCurrent()
@@ -344,6 +494,7 @@ class WidgetCoordinatorTest {
         host.runState.value = RunState.STARTED
         runCurrent()
         assertEquals(1, host.trafficReads)
+        assertEquals(host.startedAtMillis, host.renders.last().startedAtMillis)
 
         advanceTimeBy(4_000L)
         runCurrent()
@@ -363,6 +514,7 @@ class WidgetCoordinatorTest {
         host.runState.value = RunState.STOPPED
         runCurrent()
         assertEquals(0, host.renders.last().historySize)
+        assertEquals(0L, host.renders.last().startedAtMillis)
         engine.stop()
     }
 

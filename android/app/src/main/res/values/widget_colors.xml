@@ -15,6 +15,6 @@
     <color name="widget_status_err_bg">#FFDAD6</color>
     <color name="widget_status_err_fg">#93000A</color>
     <color name="widget_chart_down">#007AFF</color>
-    <color name="widget_chart_up">#84B9F7</color>
+    <color name="widget_chart_up">#76ADF2</color>
     <color name="widget_ripple">#1A181C23</color>
 </resources>

@@ -36,7 +36,7 @@
             android:orientation="vertical">
 
             <LinearLayout
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
@@ -53,25 +53,107 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
+                    android:fontFamily="sans-serif-medium"
                     android:includeFontPadding="false"
                     android:maxLines="1"
                     android:text="@string/widget_preview_node"
-                    android:textColor="@color/widget_text_primary"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
+                    android:textColor="@color/widget_text_secondary"
+                    android:textSize="11.5sp" />
             </LinearLayout>
 
-            <TextView
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:ellipsize="end"
-                android:fontFeatureSettings="tnum"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:text="@string/widget_preview_speed_compact"
-                android:textColor="@color/widget_text_secondary"
-                android:textSize="11sp" />
+                android:baselineAligned="false"
+                android:gravity="bottom"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:baselineAligned="true"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="1dp"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:text="@string/widget_arrow_down"
+                        android:textColor="@color/widget_chart_down"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFeatureSettings="tnum"
+                        android:includeFontPadding="false"
+                        android:letterSpacing="-0.025"
+                        android:maxLines="1"
+                        android:text="@string/widget_preview_down_value"
+                        android:textColor="@color/widget_text_primary"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="1dp"
+                        android:fontFamily="sans-serif-medium"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:text="@string/widget_preview_down_unit_short"
+                        android:textColor="@color/widget_text_secondary"
+                        android:textSize="9.5sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:layout_marginEnd="1dp"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:text="@string/widget_arrow_up"
+                        android:textColor="@color/widget_chart_up"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="sans-serif-medium"
+                        android:fontFeatureSettings="tnum"
+                        android:includeFontPadding="false"
+                        android:letterSpacing="-0.025"
+                        android:maxLines="1"
+                        android:text="@string/widget_preview_up_value"
+                        android:textColor="@color/widget_text_secondary"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="1dp"
+                        android:fontFamily="sans-serif-medium"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:text="@string/widget_preview_up_unit_short"
+                        android:textColor="@color/widget_text_secondary"
+                        android:textSize="9sp" />
+                </LinearLayout>
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="15dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginBottom="1dp"
+                    android:importantForAccessibility="no"
+                    android:scaleType="fitXY"
+                    android:src="@drawable/widget_preview_spark_bars" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 

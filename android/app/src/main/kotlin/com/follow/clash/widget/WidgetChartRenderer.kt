@@ -15,8 +15,13 @@ internal object WidgetChartRenderer {
     const val WIDE_HEIGHT = 152
     const val COMPACT_WIDTH = 300
     const val COMPACT_HEIGHT = 156
-    private const val TOP_PADDING_RATIO = 0.54f
+    const val SPARK_BARS_WIDTH = 66
+    const val SPARK_BARS_HEIGHT = 45
+    const val SPARK_BAR_COUNT = 4
+    private const val TOP_PADDING_RATIO = 0.55f
     private const val BOTTOM_PADDING = 6f
+    private const val MIN_SPARK_BAR_RATIO = 0.25f
+    private val SPARK_BAR_ALPHAS = intArrayOf(140, 179, 217, 255)
 
     fun render(
         samples: List<Traffic>,
@@ -92,6 +97,70 @@ internal object WidgetChartRenderer {
 
         return bitmap
     }
+
+    fun computeSparkBarRatios(samples: List<Traffic>): List<Float>? {
+        if (samples.isEmpty()) return null
+        val recent = samples.takeLast(SPARK_BAR_COUNT)
+        val recentPeak = recent.maxOfOrNull { totalBytes(it) } ?: 0L
+        if (recentPeak <= 0L) return null
+        val peak = samples.maxOfOrNull { totalBytes(it) } ?: 0L
+        if (peak <= 0L) return null
+
+        val padded = List(SPARK_BAR_COUNT - recent.size) { Traffic(0L, 0L) } + recent
+        val scale = peak.toFloat()
+        return padded.map { sample ->
+            val raw = (totalBytes(sample).toFloat() / scale).coerceIn(0f, 1f)
+            MIN_SPARK_BAR_RATIO + (1f - MIN_SPARK_BAR_RATIO) * raw
+        }
+    }
+
+    fun renderSparkBars(
+        samples: List<Traffic>,
+        downColor: Int,
+        upColor: Int,
+        isDark: Boolean,
+        width: Int = SPARK_BARS_WIDTH,
+        height: Int = SPARK_BARS_HEIGHT,
+    ): Bitmap? {
+        if (width <= 0 || height <= 0) return null
+        val ratios = computeSparkBarRatios(samples) ?: return null
+
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val gap = width * 0.12f
+        val barWidth = (width - gap * (SPARK_BAR_COUNT - 1)) / SPARK_BAR_COUNT
+        val radius = barWidth * 0.5f
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+        }
+
+        ratios.forEachIndexed { index, ratio ->
+            val left = index * (barWidth + gap)
+            val barHeight = (height * ratio).coerceIn(barWidth, height.toFloat())
+            val top = height.toFloat() - barHeight
+            val baseColor = if (index < 2) upColor else downColor
+            val alpha = if (isDark && index < 2) {
+                (SPARK_BAR_ALPHAS[index] + 20).coerceAtMost(255)
+            } else {
+                SPARK_BAR_ALPHAS[index]
+            }
+            paint.color = withAlpha(baseColor, alpha)
+            canvas.drawRoundRect(
+                left,
+                top,
+                left + barWidth,
+                height.toFloat(),
+                radius,
+                radius,
+                paint,
+            )
+        }
+
+        return bitmap
+    }
+
+    private fun totalBytes(sample: Traffic): Long =
+        sample.down.coerceAtLeast(0L) + sample.up.coerceAtLeast(0L)
 
     private fun smoothPath(points: List<Pair<Float, Float>>): Path {
         val path = Path()

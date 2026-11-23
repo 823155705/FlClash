@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import com.follow.clash.common.BroadcastLease
@@ -35,6 +36,16 @@ abstract class BaseWidgetProvider internal constructor(
         appWidgetIds: IntArray,
     ) {
         dispatchAsyncUpdate(context, appWidgetIds)
+    }
+
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: Bundle,
+    ) {
+        super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+        dispatchAsyncUpdate(context, intArrayOf(appWidgetId))
     }
 
     override fun onReceive(context: Context, intent: Intent) {

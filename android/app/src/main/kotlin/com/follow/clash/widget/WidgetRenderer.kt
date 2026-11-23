@@ -9,6 +9,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Build
+import android.os.SystemClock
 import android.view.View
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
@@ -41,6 +42,16 @@ internal enum class WidgetVisualStatus {
     SUSPENDED,
 }
 
+internal data class SpeedParts(
+    val value: String,
+    val unit: String,
+)
+
+internal data class WideHeaderVisibility(
+    val showChronometer: Boolean,
+    val showTunBadge: Boolean,
+)
+
 internal data class WidgetDisplayModel(
     val status: WidgetVisualStatus,
     val statusLabel: String,
@@ -52,10 +63,14 @@ internal data class WidgetDisplayModel(
     val showTunBadge: Boolean,
     val primaryLine: String,
     val secondaryLine: String,
+    val downParts: SpeedParts,
+    val upParts: SpeedParts,
 )
 
 internal object WidgetDisplayReducer {
     private const val EMPTY_PLACEHOLDER = "—"
+    internal const val WIDE_CHRONO_MIN_WIDTH_DP = 275
+    internal const val WIDE_TUN_MIN_WIDTH_DP = 310
 
     fun deriveStatus(
         runState: RunState,
@@ -71,7 +86,7 @@ internal object WidgetDisplayReducer {
         }
     }
 
-    fun formatSpeed(bytesPerSecond: Long): String {
+    fun formatSpeedParts(bytesPerSecond: Long): SpeedParts {
         val units = arrayOf("B/s", "KB/s", "MB/s", "GB/s", "TB/s")
         var value = bytesPerSecond.coerceAtLeast(0L).toDouble()
         var unit = 0
@@ -79,14 +94,15 @@ internal object WidgetDisplayReducer {
             value /= 1024.0
             unit++
         }
-        return if (unit == 0) {
-            "${value.toLong()} ${units[unit]}"
+        val formatted = if (unit == 0) {
+            value.toLong().toString()
         } else {
-            String.format(Locale.ROOT, "%.1f %s", value, units[unit])
+            String.format(Locale.ROOT, "%.1f", value)
         }
+        return SpeedParts(value = formatted, unit = units[unit])
     }
 
-    fun formatSpeedCompact(bytesPerSecond: Long): String {
+    fun formatSpeedCompactParts(bytesPerSecond: Long): SpeedParts {
         val units = arrayOf("B", "K", "M", "G", "T")
         var value = bytesPerSecond.coerceAtLeast(0L).toDouble()
         var unit = 0
@@ -94,11 +110,45 @@ internal object WidgetDisplayReducer {
             value /= 1024.0
             unit++
         }
-        return if (unit == 0) {
-            "${value.toLong()}${units[unit]}"
+        val formatted = if (unit == 0) {
+            value.toLong().toString()
         } else {
-            String.format(Locale.ROOT, "%.1f%s", value, units[unit])
+            String.format(Locale.ROOT, "%.1f", value)
         }
+        return SpeedParts(value = formatted, unit = units[unit])
+    }
+
+    fun formatSpeed(bytesPerSecond: Long): String =
+        formatSpeedParts(bytesPerSecond).let { "${it.value} ${it.unit}" }
+
+    fun formatSpeedCompact(bytesPerSecond: Long): String =
+        formatSpeedCompactParts(bytesPerSecond).let { "${it.value}${it.unit}" }
+
+    fun computeChronometerBase(
+        startedAtWallMillis: Long,
+        nowWallMillis: Long,
+        nowElapsedRealtimeMillis: Long,
+    ): Long? {
+        if (startedAtWallMillis <= 0L) return null
+        val elapsedMillis = (nowWallMillis - startedAtWallMillis).coerceAtLeast(0L)
+        return nowElapsedRealtimeMillis - elapsedMillis
+    }
+
+    fun resolveWideHeaderVisibility(
+        isRunning: Boolean,
+        hasChronometerBase: Boolean,
+        tunEnabled: Boolean,
+        widthDp: Int,
+    ): WideHeaderVisibility {
+        if (!isRunning) {
+            return WideHeaderVisibility(showChronometer = false, showTunBadge = false)
+        }
+        val showChrono = hasChronometerBase && (widthDp <= 0 || widthDp >= WIDE_CHRONO_MIN_WIDTH_DP)
+        val showTun = tunEnabled && (widthDp <= 0 || widthDp >= WIDE_TUN_MIN_WIDTH_DP)
+        return WideHeaderVisibility(
+            showChronometer = showChrono,
+            showTunBadge = showTun,
+        )
     }
 
     fun reduce(
@@ -152,15 +202,26 @@ internal object WidgetDisplayReducer {
             else -> modeLabel
         }
 
+        val downParts = if (kind.hasTrafficCard) {
+            formatSpeedParts(traffic.down)
+        } else {
+            formatSpeedCompactParts(traffic.down)
+        }
+        val upParts = if (kind.hasTrafficCard) {
+            formatSpeedParts(traffic.up)
+        } else {
+            formatSpeedCompactParts(traffic.up)
+        }
+
         val primaryLine: String
         val secondaryLine: String
         if (status == WidgetVisualStatus.STARTED) {
             if (kind.hasTrafficCard) {
-                primaryLine = "↓ ${formatSpeed(traffic.down)}"
-                secondaryLine = "↑ ${formatSpeed(traffic.up)}"
+                primaryLine = "↓ ${downParts.value} ${downParts.unit}"
+                secondaryLine = "↑ ${upParts.value} ${upParts.unit}"
             } else {
-                val down = "↓${formatSpeedCompact(traffic.down)}"
-                val up = "↑${formatSpeedCompact(traffic.up)}"
+                val down = "↓${downParts.value}${downParts.unit}"
+                val up = "↑${upParts.value}${upParts.unit}"
                 primaryLine = "$down $up"
                 secondaryLine = up
             }
@@ -192,6 +253,8 @@ internal object WidgetDisplayReducer {
             showTunBadge = status == WidgetVisualStatus.STARTED && snapshot.tunEnabled,
             primaryLine = primaryLine,
             secondaryLine = secondaryLine,
+            downParts = downParts,
+            upParts = upParts,
         )
     }
 }
@@ -212,6 +275,7 @@ internal object WidgetRenderer {
         snapshot: WidgetSnapshot,
         traffic: Traffic,
         history: List<Traffic>,
+        startedAtMillis: Long = 0L,
     ) {
         if (widgetIds.isEmpty()) return
         val isDark = isDarkMode(context)
@@ -223,13 +287,14 @@ internal object WidgetRenderer {
         ) { key -> fallbackString(context, key) }
 
         val customPrimary = if (isDark) snapshot.primaryColorDark else snapshot.primaryColorLight
+        val downColor = if (customPrimary != 0) {
+            customPrimary
+        } else {
+            ContextCompat.getColor(context, R.color.widget_chart_down)
+        }
+        val upColor = ContextCompat.getColor(context, R.color.widget_chart_up)
+
         val chartBitmap = if (kind.hasTrafficCard && model.status == WidgetVisualStatus.STARTED) {
-            val downColor = if (customPrimary != 0) {
-                customPrimary
-            } else {
-                ContextCompat.getColor(context, R.color.widget_chart_down)
-            }
-            val upColor = ContextCompat.getColor(context, R.color.widget_chart_up)
             val (chartWidth, chartHeight) = if (kind == WidgetKind.COMPACT_2X2) {
                 WidgetChartRenderer.COMPACT_WIDTH to WidgetChartRenderer.COMPACT_HEIGHT
             } else {
@@ -247,20 +312,64 @@ internal object WidgetRenderer {
             null
         }
 
-        try {
-            val views = buildRemoteViews(
-                context = context,
-                kind = kind,
-                snapshot = snapshot,
-                model = model,
+        val sparkBarsBitmap = if (kind == WidgetKind.BAR_4X1 && model.status == WidgetVisualStatus.STARTED) {
+            WidgetChartRenderer.renderSparkBars(
+                samples = history,
+                downColor = downColor,
+                upColor = upColor,
                 isDark = isDark,
-                chartBitmap = chartBitmap,
             )
-            for (id in widgetIds) {
-                manager.updateAppWidget(id, views)
+        } else {
+            null
+        }
+
+        val chronometerBase = if (kind == WidgetKind.WIDE_4X2 && model.status == WidgetVisualStatus.STARTED) {
+            WidgetDisplayReducer.computeChronometerBase(
+                startedAtWallMillis = startedAtMillis,
+                nowWallMillis = System.currentTimeMillis(),
+                nowElapsedRealtimeMillis = SystemClock.elapsedRealtime(),
+            )
+        } else {
+            null
+        }
+
+        try {
+            if (kind == WidgetKind.WIDE_4X2) {
+                for (id in widgetIds) {
+                    val widthDp = manager.getAppWidgetOptions(id)
+                        .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
+                    val views = buildRemoteViews(
+                        context = context,
+                        kind = kind,
+                        snapshot = snapshot,
+                        model = model,
+                        isDark = isDark,
+                        chartBitmap = chartBitmap,
+                        sparkBarsBitmap = sparkBarsBitmap,
+                        chronometerBase = chronometerBase,
+                        widthDp = widthDp,
+                    )
+                    manager.updateAppWidget(id, views)
+                }
+            } else {
+                val views = buildRemoteViews(
+                    context = context,
+                    kind = kind,
+                    snapshot = snapshot,
+                    model = model,
+                    isDark = isDark,
+                    chartBitmap = chartBitmap,
+                    sparkBarsBitmap = sparkBarsBitmap,
+                    chronometerBase = chronometerBase,
+                    widthDp = 0,
+                )
+                for (id in widgetIds) {
+                    manager.updateAppWidget(id, views)
+                }
             }
         } finally {
             chartBitmap?.recycle()
+            sparkBarsBitmap?.recycle()
         }
     }
 
@@ -271,6 +380,9 @@ internal object WidgetRenderer {
         model: WidgetDisplayModel,
         isDark: Boolean,
         chartBitmap: Bitmap?,
+        sparkBarsBitmap: Bitmap?,
+        chronometerBase: Long?,
+        widthDp: Int,
     ): RemoteViews {
         val views = RemoteViews(context.packageName, kind.layoutId)
 
@@ -304,13 +416,16 @@ internal object WidgetRenderer {
         if (kind == WidgetKind.BAR_4X1) {
             views.setImageViewResource(R.id.widget_status_dot, R.drawable.ic_widget_dot)
             setImageTintRes(views, context, R.id.widget_status_dot, statusFgRes)
-            val barTitle = if (model.status == WidgetVisualStatus.STARTED && model.nodeLabel.isNotBlank()) {
-                model.nodeLabel
+            if (model.status == WidgetVisualStatus.STARTED) {
+                val barTitle = model.nodeLabel.ifBlank { model.statusLabel }
+                views.setTextViewText(R.id.widget_bar_node_text, barTitle)
+                views.setViewVisibility(R.id.widget_bar_node_text, View.VISIBLE)
+                views.setViewVisibility(R.id.widget_status_text, View.GONE)
             } else {
-                model.statusLabel
+                views.setTextViewText(R.id.widget_status_text, model.statusLabel)
+                views.setViewVisibility(R.id.widget_status_text, View.VISIBLE)
+                views.setViewVisibility(R.id.widget_bar_node_text, View.GONE)
             }
-            views.setTextViewText(R.id.widget_status_text, barTitle)
-            setTextColorRes(views, context, R.id.widget_status_text, R.color.widget_text_primary)
         } else {
             views.setInt(R.id.widget_status_badge, "setBackgroundResource", statusBgRes)
             views.setImageViewResource(R.id.widget_status_dot, R.drawable.ic_widget_dot)
@@ -398,21 +513,75 @@ internal object WidgetRenderer {
                 if (model.canSelectProxy) View.VISIBLE else View.GONE,
             )
         }
-        views.setTextViewText(R.id.widget_speed_primary, model.primaryLine)
-
         if (kind == WidgetKind.WIDE_4X2) {
+            val headerVisibility = WidgetDisplayReducer.resolveWideHeaderVisibility(
+                isRunning = model.status == WidgetVisualStatus.STARTED,
+                hasChronometerBase = chronometerBase != null,
+                tunEnabled = snapshot.tunEnabled,
+                widthDp = widthDp,
+            )
+            if (headerVisibility.showChronometer && chronometerBase != null) {
+                views.setChronometer(R.id.widget_chronometer, chronometerBase, null, true)
+                views.setViewVisibility(R.id.widget_chronometer, View.VISIBLE)
+            } else {
+                views.setChronometer(R.id.widget_chronometer, SystemClock.elapsedRealtime(), null, false)
+                views.setViewVisibility(R.id.widget_chronometer, View.GONE)
+            }
             views.setViewVisibility(
                 R.id.widget_tun_badge,
-                if (model.showTunBadge) View.VISIBLE else View.GONE,
+                if (headerVisibility.showTunBadge) View.VISIBLE else View.GONE,
             )
             views.setTextViewText(R.id.widget_group_text, model.groupLabel)
         }
+
+        val isRunning = model.status == WidgetVisualStatus.STARTED
+        if (isRunning) {
+            views.setViewVisibility(R.id.widget_speed_running, View.VISIBLE)
+            views.setTextViewText(R.id.widget_down_value, model.downParts.value)
+            views.setTextViewText(R.id.widget_down_unit, model.downParts.unit)
+            views.setTextViewText(R.id.widget_up_value, model.upParts.value)
+            views.setTextViewText(R.id.widget_up_unit, model.upParts.unit)
+            if (hasCustomPrimary) {
+                setTextColorDynamic(
+                    views = views,
+                    context = context,
+                    viewId = R.id.widget_down_arrow,
+                    lightColor = snapshot.primaryColorLight,
+                    darkColor = snapshot.primaryColorDark,
+                    fallbackResId = R.color.widget_chart_down,
+                    isDark = isDark,
+                )
+            } else {
+                setTextColorRes(views, context, R.id.widget_down_arrow, R.color.widget_chart_down)
+            }
+            if (kind.hasTrafficCard) {
+                views.setViewVisibility(R.id.widget_speed_idle, View.GONE)
+            } else {
+                views.setViewVisibility(R.id.widget_speed_primary, View.GONE)
+                if (sparkBarsBitmap != null) {
+                    views.setImageViewBitmap(R.id.widget_spark_bars, sparkBarsBitmap)
+                    views.setViewVisibility(R.id.widget_spark_bars, View.VISIBLE)
+                } else {
+                    views.setViewVisibility(R.id.widget_spark_bars, View.GONE)
+                }
+            }
+        } else {
+            views.setViewVisibility(R.id.widget_speed_running, View.GONE)
+            views.setTextViewText(R.id.widget_speed_primary, model.primaryLine)
+            if (kind.hasTrafficCard) {
+                views.setViewVisibility(R.id.widget_speed_idle, View.VISIBLE)
+                views.setTextViewText(R.id.widget_speed_secondary, model.secondaryLine)
+                views.setViewVisibility(
+                    R.id.widget_speed_secondary,
+                    if (model.secondaryLine.isNotBlank()) View.VISIBLE else View.GONE,
+                )
+            } else {
+                views.setViewVisibility(R.id.widget_speed_primary, View.VISIBLE)
+                views.setViewVisibility(R.id.widget_spark_bars, View.GONE)
+            }
+        }
+
         if (kind.hasTrafficCard) {
-            views.setTextViewText(R.id.widget_speed_secondary, model.secondaryLine)
-            views.setViewVisibility(
-                R.id.widget_speed_secondary,
-                if (model.secondaryLine.isNotBlank()) View.VISIBLE else View.GONE,
-            )
             if (chartBitmap != null) {
                 views.setImageViewBitmap(R.id.widget_traffic_chart, chartBitmap)
                 views.setViewVisibility(R.id.widget_traffic_chart, View.VISIBLE)
@@ -519,6 +688,40 @@ internal object WidgetRenderer {
         } else {
             views.setTextColor(viewId, ContextCompat.getColor(context, colorResId))
         }
+    }
+
+    private fun setTextColorDynamic(
+        views: RemoteViews,
+        context: Context,
+        viewId: Int,
+        lightColor: Int,
+        darkColor: Int,
+        fallbackResId: Int,
+        isDark: Boolean,
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val resolvedLight = lightColor.takeIf { it != 0 }
+                ?: ContextCompat.getColor(contextForNightMode(context, false), fallbackResId)
+            val resolvedDark = darkColor.takeIf { it != 0 }
+                ?: ContextCompat.getColor(contextForNightMode(context, true), fallbackResId)
+            views.setColorStateList(
+                viewId,
+                "setTextColor",
+                ColorStateList.valueOf(resolvedLight),
+                ColorStateList.valueOf(resolvedDark),
+            )
+        } else {
+            val resolved = (if (isDark) darkColor else lightColor).takeIf { it != 0 }
+                ?: ContextCompat.getColor(context, fallbackResId)
+            views.setTextColor(viewId, resolved)
+        }
+    }
+
+    private fun contextForNightMode(context: Context, night: Boolean): Context {
+        val config = Configuration(context.resources.configuration)
+        config.uiMode = (config.uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+            if (night) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+        return context.createConfigurationContext(config)
     }
 
     private fun setImageTintRes(

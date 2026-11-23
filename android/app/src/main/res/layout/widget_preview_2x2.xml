@@ -97,33 +97,91 @@
             android:gravity="top"
             android:orientation="vertical"
             android:paddingHorizontal="10dp"
-            android:paddingTop="8dp"
+            android:paddingTop="7dp"
             android:paddingBottom="6dp">
 
-            <TextView
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:fontFeatureSettings="tnum"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:text="@string/widget_preview_down"
-                android:textColor="@color/widget_text_primary"
-                android:textSize="14sp"
-                android:textStyle="bold" />
+                android:baselineAligned="true"
+                android:orientation="horizontal">
 
-            <TextView
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="2dp"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="@string/widget_arrow_down"
+                    android:textColor="@color/widget_chart_down"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFeatureSettings="tnum"
+                    android:includeFontPadding="false"
+                    android:letterSpacing="-0.025"
+                    android:maxLines="1"
+                    android:text="@string/widget_preview_down_value"
+                    android:textColor="@color/widget_text_primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="2dp"
+                    android:fontFamily="sans-serif-medium"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="@string/widget_preview_down_unit"
+                    android:textColor="@color/widget_text_secondary"
+                    android:textSize="9.5sp" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:ellipsize="end"
-                android:fontFamily="sans-serif-medium"
-                android:fontFeatureSettings="tnum"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:text="@string/widget_preview_up"
-                android:textColor="@color/widget_text_secondary"
-                android:textSize="11sp" />
+                android:baselineAligned="true"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="2dp"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="@string/widget_arrow_up"
+                    android:textColor="@color/widget_chart_up"
+                    android:textSize="9.5sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="sans-serif-medium"
+                    android:fontFeatureSettings="tnum"
+                    android:includeFontPadding="false"
+                    android:letterSpacing="-0.025"
+                    android:maxLines="1"
+                    android:text="@string/widget_preview_up_value"
+                    android:textColor="@color/widget_text_secondary"
+                    android:textSize="11.5sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="2dp"
+                    android:fontFamily="sans-serif-medium"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="@string/widget_preview_up_unit"
+                    android:textColor="@color/widget_text_secondary"
+                    android:textSize="9sp" />
+            </LinearLayout>
         </LinearLayout>
     </FrameLayout>
 

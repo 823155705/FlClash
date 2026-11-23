@@ -23,7 +23,13 @@
     <string name="widget_tun">TUN</string>
     <string name="widget_preview_node">HK-01 IEPL</string>
     <string name="widget_preview_group">Proxy</string>
-    <string name="widget_preview_down">↓ 12.4 MB/s</string>
-    <string name="widget_preview_up">↑ 1.8 MB/s</string>
-    <string name="widget_preview_speed_compact">↓12.4M ↑1.8M</string>
+    <string name="widget_arrow_down">↓</string>
+    <string name="widget_arrow_up">↑</string>
+    <string name="widget_preview_down_value">12.4</string>
+    <string name="widget_preview_down_unit">MB/s</string>
+    <string name="widget_preview_down_unit_short">M</string>
+    <string name="widget_preview_up_value">1.8</string>
+    <string name="widget_preview_up_unit">MB/s</string>
+    <string name="widget_preview_up_unit_short">M</string>
+    <string name="widget_preview_uptime">01:24:09</string>
 </resources>

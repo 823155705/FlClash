@@ -38,6 +38,12 @@
         </shape>
     </item>
     <item
+        android:width="22dp"
+        android:height="15dp"
+        android:drawable="@drawable/widget_preview_spark_bars"
+        android:left="136dp"
+        android:top="31dp" />
+    <item
         android:width="64dp"
         android:height="34dp"
         android:right="60dp"
