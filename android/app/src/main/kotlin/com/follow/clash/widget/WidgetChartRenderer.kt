@@ -14,7 +14,7 @@ internal object WidgetChartRenderer {
     private const val WIDTH = 280
     private const val HEIGHT = 100
     private const val HORIZONTAL_PADDING = 4f
-    private const val TOP_PADDING = 14f
+    private const val TOP_PADDING = 52f
     private const val BOTTOM_PADDING = 4f
 
     fun render(

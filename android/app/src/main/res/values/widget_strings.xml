@@ -18,11 +18,12 @@
     <string name="widget_mode_direct">Direct</string>
     <string name="widget_select_node_title">Select proxy</string>
     <string name="widget_no_nodes">No proxies available</string>
+    <string name="widget_open_app">Open FlClash</string>
     <string name="widget_a11y_toggle">Toggle VPN</string>
     <string name="widget_tun">TUN</string>
     <string name="widget_preview_node">HK-01 IEPL</string>
     <string name="widget_preview_group">Proxy</string>
     <string name="widget_preview_down">↓ 12.4 MB/s</string>
     <string name="widget_preview_up">↑ 1.8 MB/s</string>
-    <string name="widget_preview_speed_compact">↓12.4M  ↑1.8M</string>
+    <string name="widget_preview_speed_compact">↓12.4M ↑1.8M</string>
 </resources>

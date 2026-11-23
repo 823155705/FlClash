@@ -52,6 +52,8 @@ internal data class WidgetDisplayModel(
 )
 
 internal object WidgetDisplayReducer {
+    private const val EMPTY_PLACEHOLDER = "—"
+
     fun deriveStatus(
         runState: RunState,
         snapshot: WidgetSnapshot,
@@ -78,6 +80,21 @@ internal object WidgetDisplayReducer {
             "${value.toLong()} ${units[unit]}"
         } else {
             String.format(Locale.ROOT, "%.1f %s", value, units[unit])
+        }
+    }
+
+    fun formatSpeedCompact(bytesPerSecond: Long): String {
+        val units = arrayOf("B", "K", "M", "G", "T")
+        var value = bytesPerSecond.coerceAtLeast(0L).toDouble()
+        var unit = 0
+        while (value >= 1024.0 && unit < units.lastIndex) {
+            value /= 1024.0
+            unit++
+        }
+        return if (unit == 0) {
+            "${value.toLong()}${units[unit]}"
+        } else {
+            String.format(Locale.ROOT, "%.1f%s", value, units[unit])
         }
     }
 
@@ -118,7 +135,7 @@ internal object WidgetDisplayReducer {
             snapshot.proxyNames.isNotEmpty()
 
         val nodeLabel = when {
-            status == WidgetVisualStatus.NO_PROFILE -> label("noProfile")
+            status == WidgetVisualStatus.NO_PROFILE -> EMPTY_PLACEHOLDER
             modeKey == "direct" -> label("direct")
             snapshot.nodeName.isNotBlank() -> snapshot.nodeName
             snapshot.profileName.isNotBlank() -> snapshot.profileName
@@ -126,7 +143,7 @@ internal object WidgetDisplayReducer {
         }
 
         val groupLabel = when {
-            status == WidgetVisualStatus.NO_PROFILE -> label("openApp")
+            status == WidgetVisualStatus.NO_PROFILE -> label("appName")
             modeKey == "direct" -> modeLabel
             snapshot.groupName.isNotBlank() -> snapshot.groupName
             else -> modeLabel
@@ -135,14 +152,19 @@ internal object WidgetDisplayReducer {
         val primaryLine: String
         val secondaryLine: String
         if (status == WidgetVisualStatus.STARTED) {
-            val down = "↓ ${formatSpeed(traffic.down)}"
-            val up = "↑ ${formatSpeed(traffic.up)}"
-            primaryLine = if (kind == WidgetKind.BAR_4X1) "$down  $up" else down
-            secondaryLine = up
+            if (kind == WidgetKind.WIDE_4X2) {
+                primaryLine = "↓ ${formatSpeed(traffic.down)}"
+                secondaryLine = "↑ ${formatSpeed(traffic.up)}"
+            } else {
+                val down = "↓${formatSpeedCompact(traffic.down)}"
+                val up = "↑${formatSpeedCompact(traffic.up)}"
+                primaryLine = "$down $up"
+                secondaryLine = up
+            }
         } else {
             val profile = snapshot.profileName.trim()
             primaryLine = when (status) {
-                WidgetVisualStatus.NO_PROFILE -> label("noProfile")
+                WidgetVisualStatus.NO_PROFILE -> label("openApp")
                 WidgetVisualStatus.STARTING -> label("connecting")
                 WidgetVisualStatus.STOPPING -> label("stopping")
                 WidgetVisualStatus.SUSPENDED -> label("suspended")
@@ -150,7 +172,7 @@ internal object WidgetDisplayReducer {
                 WidgetVisualStatus.STARTED -> ""
             }
             secondaryLine = when (status) {
-                WidgetVisualStatus.NO_PROFILE -> label("openApp")
+                WidgetVisualStatus.NO_PROFILE -> label("appName")
                 WidgetVisualStatus.STOPPED -> if (profile.isNotBlank()) label("tapToStart") else ""
                 else -> profile
             }
@@ -197,11 +219,6 @@ internal object WidgetRenderer {
         ) { key -> fallbackString(context, key) }
 
         val customPrimary = if (isDark) snapshot.primaryColorDark else snapshot.primaryColorLight
-        val effectivePrimary = if (customPrimary != 0) {
-            customPrimary
-        } else {
-            ContextCompat.getColor(context, R.color.widget_primary)
-        }
         val chartBitmap = if (kind == WidgetKind.WIDE_4X2 && model.status == WidgetVisualStatus.STARTED) {
             val downColor = if (customPrimary != 0) {
                 customPrimary
@@ -221,8 +238,6 @@ internal object WidgetRenderer {
                 snapshot = snapshot,
                 model = model,
                 isDark = isDark,
-                customPrimary = customPrimary,
-                effectivePrimary = effectivePrimary,
                 chartBitmap = chartBitmap,
             )
             for (id in widgetIds) {
@@ -239,23 +254,21 @@ internal object WidgetRenderer {
         snapshot: WidgetSnapshot,
         model: WidgetDisplayModel,
         isDark: Boolean,
-        customPrimary: Int,
-        effectivePrimary: Int,
         chartBitmap: Bitmap?,
     ): RemoteViews {
         val views = RemoteViews(context.packageName, kind.layoutId)
-        val textPrimary = ContextCompat.getColor(context, R.color.widget_text_primary)
-        val okFg = ContextCompat.getColor(context, R.color.widget_status_ok_fg)
-        val warnFg = ContextCompat.getColor(context, R.color.widget_status_warn_fg)
-        val textSecondary = ContextCompat.getColor(context, R.color.widget_text_secondary)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val cardTint = if (isDark && snapshot.pureBlack) {
-                ColorStateList.valueOf(Color.BLACK)
+            if (snapshot.pureBlack) {
+                views.setColorStateList(
+                    android.R.id.background,
+                    "setBackgroundTintList",
+                    null,
+                    ColorStateList.valueOf(Color.BLACK),
+                )
             } else {
-                null
+                views.setColorStateList(android.R.id.background, "setBackgroundTintList", null)
             }
-            views.setColorStateList(android.R.id.background, "setBackgroundTintList", cardTint)
         }
 
         val glyphRes = when (model.status) {
@@ -264,32 +277,32 @@ internal object WidgetRenderer {
         }
         views.setImageViewResource(R.id.widget_glyph, glyphRes)
 
-        val (statusBgRes, statusFg) = when (model.status) {
-            WidgetVisualStatus.STARTED -> R.drawable.widget_bg_status_ok to okFg
+        val (statusBgRes, statusFgRes) = when (model.status) {
+            WidgetVisualStatus.STARTED -> R.drawable.widget_bg_status_ok to R.color.widget_status_ok_fg
             WidgetVisualStatus.STARTING,
             WidgetVisualStatus.STOPPING,
             WidgetVisualStatus.SUSPENDED,
-            -> R.drawable.widget_bg_status_warn to warnFg
+            -> R.drawable.widget_bg_status_warn to R.color.widget_status_warn_fg
             WidgetVisualStatus.STOPPED,
             WidgetVisualStatus.NO_PROFILE,
-            -> R.drawable.widget_bg_status_idle to textSecondary
+            -> R.drawable.widget_bg_status_idle to R.color.widget_text_secondary
         }
         if (kind == WidgetKind.BAR_4X1) {
             views.setImageViewResource(R.id.widget_status_dot, R.drawable.ic_widget_dot)
-            views.setInt(R.id.widget_status_dot, "setColorFilter", statusFg)
+            setImageTintRes(views, context, R.id.widget_status_dot, statusFgRes)
             val barTitle = if (model.status == WidgetVisualStatus.STARTED && model.nodeLabel.isNotBlank()) {
                 model.nodeLabel
             } else {
                 model.statusLabel
             }
             views.setTextViewText(R.id.widget_status_text, barTitle)
-            views.setTextColor(R.id.widget_status_text, textPrimary)
+            setTextColorRes(views, context, R.id.widget_status_text, R.color.widget_text_primary)
         } else {
             views.setInt(R.id.widget_status_badge, "setBackgroundResource", statusBgRes)
             views.setImageViewResource(R.id.widget_status_dot, R.drawable.ic_widget_dot)
-            views.setInt(R.id.widget_status_dot, "setColorFilter", statusFg)
+            setImageTintRes(views, context, R.id.widget_status_dot, statusFgRes)
             views.setTextViewText(R.id.widget_status_text, model.statusLabel)
-            views.setTextColor(R.id.widget_status_text, statusFg)
+            setTextColorRes(views, context, R.id.widget_status_text, statusFgRes)
         }
 
         val toggleBgRes = when (model.status) {
@@ -303,13 +316,15 @@ internal object WidgetRenderer {
             -> R.drawable.widget_toggle_bg_idle
         }
         views.setInt(R.id.widget_toggle_button, "setBackgroundResource", toggleBgRes)
+        val hasCustomPrimary = snapshot.primaryColorLight != 0 || snapshot.primaryColorDark != 0
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val toggleTint = if (model.status == WidgetVisualStatus.STARTED && customPrimary != 0) {
-                ColorStateList.valueOf(effectivePrimary)
+            if (model.status == WidgetVisualStatus.STARTED && hasCustomPrimary) {
+                val lightTint = snapshot.primaryColorLight.takeIf { it != 0 }?.let(ColorStateList::valueOf)
+                val darkTint = snapshot.primaryColorDark.takeIf { it != 0 }?.let(ColorStateList::valueOf)
+                views.setColorStateList(R.id.widget_toggle_button, "setBackgroundTintList", lightTint, darkTint)
             } else {
-                null
+                views.setColorStateList(R.id.widget_toggle_button, "setBackgroundTintList", null)
             }
-            views.setColorStateList(R.id.widget_toggle_button, "setBackgroundTintList", toggleTint)
         }
 
         val isTransitioning = model.status == WidgetVisualStatus.STARTING ||
@@ -322,20 +337,29 @@ internal object WidgetRenderer {
             views.setViewVisibility(R.id.widget_toggle_icon, View.VISIBLE)
             if (model.status == WidgetVisualStatus.STARTED) {
                 views.setImageViewResource(R.id.widget_toggle_icon, R.drawable.ic_widget_stop)
-                val onPrimary = if (customPrimary != 0) {
-                    readableForeground(effectivePrimary)
+                if (hasCustomPrimary) {
+                    val lightFg = if (snapshot.primaryColorLight != 0) {
+                        readableForeground(snapshot.primaryColorLight)
+                    } else {
+                        Color.WHITE
+                    }
+                    val darkFg = if (snapshot.primaryColorDark != 0) {
+                        readableForeground(snapshot.primaryColorDark)
+                    } else {
+                        Color.WHITE
+                    }
+                    setImageTintDynamic(views, R.id.widget_toggle_icon, lightFg, darkFg, isDark)
                 } else {
-                    ContextCompat.getColor(context, R.color.widget_on_primary)
+                    setImageTintRes(views, context, R.id.widget_toggle_icon, R.color.widget_on_primary)
                 }
-                views.setInt(R.id.widget_toggle_icon, "setColorFilter", onPrimary)
             } else {
                 views.setImageViewResource(R.id.widget_toggle_icon, R.drawable.ic_widget_play)
-                val iconColor = when (model.status) {
-                    WidgetVisualStatus.SUSPENDED -> warnFg
-                    WidgetVisualStatus.NO_PROFILE -> textSecondary
-                    else -> textPrimary
+                val iconColorRes = when (model.status) {
+                    WidgetVisualStatus.SUSPENDED -> R.color.widget_status_warn_fg
+                    WidgetVisualStatus.NO_PROFILE -> R.color.widget_text_secondary
+                    else -> R.color.widget_text_primary
                 }
-                views.setInt(R.id.widget_toggle_icon, "setColorFilter", iconColor)
+                setImageTintRes(views, context, R.id.widget_toggle_icon, iconColorRes)
             }
         }
 
@@ -349,6 +373,12 @@ internal object WidgetRenderer {
 
         if (kind != WidgetKind.BAR_4X1) {
             views.setTextViewText(R.id.widget_node_text, model.nodeLabel)
+            val nodeColorRes = if (model.status == WidgetVisualStatus.NO_PROFILE) {
+                R.color.widget_text_secondary
+            } else {
+                R.color.widget_text_primary
+            }
+            setTextColorRes(views, context, R.id.widget_node_text, nodeColorRes)
             views.setViewVisibility(
                 R.id.widget_node_chevron,
                 if (model.canSelectProxy) View.VISIBLE else View.GONE,
@@ -449,6 +479,51 @@ internal object WidgetRenderer {
         )
     }
 
+    private fun setTextColorRes(
+        views: RemoteViews,
+        context: Context,
+        viewId: Int,
+        colorResId: Int,
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            views.setColorStateList(viewId, "setTextColor", colorResId)
+        } else {
+            views.setTextColor(viewId, ContextCompat.getColor(context, colorResId))
+        }
+    }
+
+    private fun setImageTintRes(
+        views: RemoteViews,
+        context: Context,
+        viewId: Int,
+        colorResId: Int,
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            views.setColorStateList(viewId, "setImageTintList", colorResId)
+        } else {
+            views.setInt(viewId, "setColorFilter", ContextCompat.getColor(context, colorResId))
+        }
+    }
+
+    private fun setImageTintDynamic(
+        views: RemoteViews,
+        viewId: Int,
+        lightColor: Int,
+        darkColor: Int,
+        isDark: Boolean,
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            views.setColorStateList(
+                viewId,
+                "setImageTintList",
+                ColorStateList.valueOf(lightColor),
+                ColorStateList.valueOf(darkColor),
+            )
+        } else {
+            views.setInt(viewId, "setColorFilter", if (isDark) darkColor else lightColor)
+        }
+    }
+
     private fun isDarkMode(context: Context): Boolean =
         (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
@@ -476,7 +551,8 @@ internal object WidgetRenderer {
         "direct" -> context.getString(R.string.widget_mode_direct)
         "selectNodeTitle" -> context.getString(R.string.widget_select_node_title)
         "noNodesAvailable" -> context.getString(R.string.widget_no_nodes)
-        "openApp" -> context.getString(com.follow.clash.common.R.string.app_name)
+        "openApp" -> context.getString(R.string.widget_open_app)
+        "appName" -> context.getString(com.follow.clash.common.R.string.app_name)
         else -> ""
     }
 }

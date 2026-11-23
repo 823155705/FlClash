@@ -140,6 +140,12 @@ class WidgetCoordinatorTest {
         assertEquals("1.5 KB/s", WidgetDisplayReducer.formatSpeed(1536L))
         assertEquals("2.0 MB/s", WidgetDisplayReducer.formatSpeed(2L * 1024L * 1024L))
         assertEquals("1.0 GB/s", WidgetDisplayReducer.formatSpeed(1024L * 1024L * 1024L))
+
+        assertEquals("0B", WidgetDisplayReducer.formatSpeedCompact(-50L))
+        assertEquals("512B", WidgetDisplayReducer.formatSpeedCompact(512L))
+        assertEquals("1.5K", WidgetDisplayReducer.formatSpeedCompact(1536L))
+        assertEquals("2.0M", WidgetDisplayReducer.formatSpeedCompact(2L * 1024L * 1024L))
+        assertEquals("1.0G", WidgetDisplayReducer.formatSpeedCompact(1024L * 1024L * 1024L))
     }
 
     @Test
@@ -166,14 +172,65 @@ class WidgetCoordinatorTest {
         assertEquals("↓ 2.0 KB/s", directModel.primaryLine)
         assertEquals("↑ 1.0 KB/s", directModel.secondaryLine)
 
-        val compactRunning = WidgetDisplayReducer.reduce(
+        val barRunning = WidgetDisplayReducer.reduce(
             kind = WidgetKind.BAR_4X1,
             runState = RunState.STARTED,
             snapshot = base.copy(mode = "rule"),
             traffic = Traffic(up = 1024L, down = 2048L),
         ) { it }
-        assertTrue(compactRunning.canSelectProxy)
-        assertEquals("↓ 2.0 KB/s  ↑ 1.0 KB/s", compactRunning.primaryLine)
+        assertTrue(barRunning.canSelectProxy)
+        assertEquals("↓2.0K ↑1.0K", barRunning.primaryLine)
+
+        val compactRunning = WidgetDisplayReducer.reduce(
+            kind = WidgetKind.COMPACT_2X2,
+            runState = RunState.STARTED,
+            snapshot = base.copy(mode = "rule"),
+            traffic = Traffic(up = 1024L, down = 2048L),
+        ) { it }
+        assertEquals("↓2.0K ↑1.0K", compactRunning.primaryLine)
+
+        val noProfileFallback: (String) -> String = { key ->
+            when (key) {
+                "noProfile" -> "No profile"
+                "openApp" -> "Open FlClash"
+                "appName" -> "FlClash"
+                else -> key
+            }
+        }
+        val noProfile4x2 = WidgetDisplayReducer.reduce(
+            kind = WidgetKind.WIDE_4X2,
+            runState = RunState.STOPPED,
+            snapshot = WidgetSnapshot(hasProfile = false),
+            traffic = Traffic(0L, 0L),
+            fallbackLabel = noProfileFallback,
+        )
+        assertFalse(noProfile4x2.canSelectProxy)
+        assertEquals("No profile", noProfile4x2.statusLabel)
+        assertEquals("Open FlClash", noProfile4x2.primaryLine)
+        assertEquals("FlClash", noProfile4x2.secondaryLine)
+        assertEquals("FlClash", noProfile4x2.groupLabel)
+        assertEquals("—", noProfile4x2.nodeLabel)
+
+        val noProfile4x1 = WidgetDisplayReducer.reduce(
+            kind = WidgetKind.BAR_4X1,
+            runState = RunState.STOPPED,
+            snapshot = WidgetSnapshot(hasProfile = false),
+            traffic = Traffic(0L, 0L),
+            fallbackLabel = noProfileFallback,
+        )
+        assertEquals("No profile", noProfile4x1.statusLabel)
+        assertEquals("Open FlClash", noProfile4x1.primaryLine)
+
+        val noProfile2x2 = WidgetDisplayReducer.reduce(
+            kind = WidgetKind.COMPACT_2X2,
+            runState = RunState.STOPPED,
+            snapshot = WidgetSnapshot(hasProfile = false),
+            traffic = Traffic(0L, 0L),
+            fallbackLabel = noProfileFallback,
+        )
+        assertEquals("No profile", noProfile2x2.statusLabel)
+        assertEquals("Open FlClash", noProfile2x2.primaryLine)
+        assertEquals("—", noProfile2x2.nodeLabel)
     }
 
     @Test
@@ -311,6 +368,31 @@ class WidgetCoordinatorTest {
         engine.updateSnapshot(WidgetSnapshot(hasProfile = true, profileName = "Real"))
         runCurrent()
         assertEquals("Real", host.renders.last().snapshot.profileName)
+        engine.stop()
+    }
+
+    @Test
+    fun `refreshNow re-renders only when widgets are active and keeps history`() = runTest(StandardTestDispatcher()) {
+        val host = FakeCoordinatorHost(
+            initialRunState = RunState.STARTED,
+            initialActive = false,
+            initialScreenOn = true,
+        )
+        val engine = WidgetCoordinatorEngine(host, WidgetStore(InMemoryStorage()), backgroundScope)
+
+        engine.refreshNow()
+        assertEquals(0, host.renders.size)
+
+        host.active = true
+        engine.start()
+        runCurrent()
+        val rendersAfterStart = host.renders.size
+        val readsAfterStart = host.trafficReads
+
+        engine.refreshNow()
+        assertEquals(rendersAfterStart + 1, host.renders.size)
+        assertEquals(readsAfterStart, host.trafficReads)
+        assertEquals(1, host.renders.last().historySize)
         engine.stop()
     }
 }

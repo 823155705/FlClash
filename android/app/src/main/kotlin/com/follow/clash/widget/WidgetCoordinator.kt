@@ -2,9 +2,11 @@ package com.follow.clash.widget
 
 import android.app.Application
 import android.appwidget.AppWidgetManager
+import android.content.ComponentCallbacks
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.PowerManager
 import androidx.core.content.getSystemService
 import com.follow.clash.RunState
@@ -159,6 +161,22 @@ internal class WidgetCoordinatorEngine(
         host.renderKind(kind, widgetIds, runState, snapshot, traffic, history)
     }
 
+    fun refreshNow() {
+        val active = host.hasActiveWidgets()
+        updateActiveState(active)
+        if (!active) return
+        val runState = host.runState.value
+        val snapshot = resolveEffectiveSnapshot()
+        snapshotFlow.value = snapshot
+        val history = if (runState == RunState.STARTED) copyHistory() else emptyList()
+        val traffic = if (runState == RunState.STARTED) {
+            history.lastOrNull() ?: recordSample(host.readTraffic())
+        } else {
+            ZERO_TRAFFIC
+        }
+        host.renderAll(runState, snapshot, traffic, if (runState == RunState.STARTED) copyHistory() else emptyList())
+    }
+
     private fun resolveEffectiveSnapshot(): WidgetSnapshot =
         if (store.hasSavedSnapshot()) store.loadSnapshot() else host.fallbackSnapshot()
 
@@ -206,6 +224,7 @@ object WidgetCoordinator {
 
     @Volatile
     private var engine: WidgetCoordinatorEngine? = null
+    private var configCallbacksRegistered = false
 
     fun install(application: Application) {
         ensureEngine(application)
@@ -277,6 +296,17 @@ object WidgetCoordinator {
         }
     }
 
+    internal fun onNightModeChanged(context: Context) {
+        val appContext = context.applicationContext
+        scope.launch {
+            runCatching {
+                ensureEngine(appContext).refreshNow()
+            }.onFailure { error ->
+                GlobalState.log("Unable to refresh widgets after theme change: $error")
+            }
+        }
+    }
+
     internal suspend fun handleProviderUpdate(
         context: Context,
         kind: WidgetKind,
@@ -294,6 +324,7 @@ object WidgetCoordinator {
         return synchronized(this) {
             engine?.let { return@synchronized it }
             val appContext = context.applicationContext
+            registerConfigCallbacks(appContext)
             val store = WidgetStore(SharedPrefsWidgetStorage(appContext), gson)
             val host = AndroidWidgetCoordinatorHost(appContext, pluginRef, gson)
             WidgetCoordinatorEngine(host, store, scope).also { created ->
@@ -301,6 +332,25 @@ object WidgetCoordinator {
                 created.start()
             }
         }
+    }
+
+    private fun registerConfigCallbacks(appContext: Context) {
+        if (configCallbacksRegistered) return
+        configCallbacksRegistered = true
+        var lastNightMode = appContext.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        appContext.registerComponentCallbacks(
+            object : ComponentCallbacks {
+                override fun onConfigurationChanged(newConfig: Configuration) {
+                    val nightMode = newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK
+                    if (nightMode == lastNightMode) return
+                    lastNightMode = nightMode
+                    onNightModeChanged(appContext)
+                }
+
+                @Deprecated("Deprecated in Java")
+                override fun onLowMemory() = Unit
+            },
+        )
     }
 }
 

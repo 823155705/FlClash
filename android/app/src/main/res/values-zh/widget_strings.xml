@@ -18,11 +18,12 @@
     <string name="widget_mode_direct">直连</string>
     <string name="widget_select_node_title">选择节点</string>
     <string name="widget_no_nodes">暂无可用节点</string>
+    <string name="widget_open_app">打开 FlClash</string>
     <string name="widget_a11y_toggle">切换代理开关</string>
     <string name="widget_tun">TUN</string>
     <string name="widget_preview_node">香港 01 IEPL</string>
     <string name="widget_preview_group">节点选择</string>
     <string name="widget_preview_down">↓ 12.4 MB/s</string>
     <string name="widget_preview_up">↑ 1.8 MB/s</string>
-    <string name="widget_preview_speed_compact">↓12.4M  ↑1.8M</string>
+    <string name="widget_preview_speed_compact">↓12.4M ↑1.8M</string>
 </resources>

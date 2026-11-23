@@ -174,10 +174,11 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:gravity="center_vertical"
+                android:gravity="top"
                 android:orientation="vertical"
                 android:paddingHorizontal="12dp"
-                android:paddingVertical="6dp">
+                android:paddingTop="10dp"
+                android:paddingBottom="6dp">
 
                 <TextView
                     android:id="@+id/widget_speed_primary"
