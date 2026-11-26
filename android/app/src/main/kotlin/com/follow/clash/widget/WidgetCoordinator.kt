@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
 internal interface WidgetCoordinatorHost {
@@ -69,9 +70,12 @@ internal interface WidgetCoordinatorHost {
         traffic: Traffic,
         history: List<Traffic>,
         startedAtMillis: Long,
+        optionsByWidgetId: Map<Int, WidgetOptionsSnapshot> = emptyMap(),
     )
 
     fun onWidgetsActiveChanged(active: Boolean)
+
+    fun onWidgetsDeleted(widgetIds: IntArray) = Unit
 }
 
 internal class WidgetCoordinatorEngine(
@@ -149,6 +153,11 @@ internal class WidgetCoordinatorEngine(
         updateActiveState(host.hasActiveWidgets())
     }
 
+    fun onWidgetsDeleted(widgetIds: IntArray) {
+        host.onWidgetsDeleted(widgetIds)
+        onWidgetsChanged()
+    }
+
     fun updateSnapshot(snapshot: WidgetSnapshot) {
         val normalized = snapshot.normalized()
         store.saveSnapshot(normalized)
@@ -163,7 +172,11 @@ internal class WidgetCoordinatorEngine(
 
     fun consumePendingAction(): WidgetPendingAction? = store.consumePendingAction()
 
-    fun renderKindNow(kind: WidgetKind, widgetIds: IntArray) {
+    fun renderKindNow(
+        kind: WidgetKind,
+        widgetIds: IntArray,
+        optionsByWidgetId: Map<Int, WidgetOptionsSnapshot> = emptyMap(),
+    ) {
         updateActiveState(host.hasActiveWidgets())
         if (widgetIds.isEmpty()) return
         val runState = host.runState.value
@@ -176,7 +189,16 @@ internal class WidgetCoordinatorEngine(
         }
         val history = if (runState == RunState.STARTED) copyHistory() else emptyList()
         val startedAt = if (runState == RunState.STARTED) host.readStartedAtMillis() else 0L
-        host.renderKind(kind, widgetIds, runState, snapshot, traffic, history, startedAt)
+        host.renderKind(
+            kind = kind,
+            widgetIds = widgetIds,
+            runState = runState,
+            snapshot = snapshot,
+            traffic = traffic,
+            history = history,
+            startedAtMillis = startedAt,
+            optionsByWidgetId = optionsByWidgetId,
+        )
     }
 
     fun refreshNow() {
@@ -321,24 +343,41 @@ object WidgetCoordinator {
         }
     }
 
-    internal fun onNightModeChanged(context: Context) {
+    internal fun onWidgetsDeleted(context: Context, widgetIds: IntArray) {
+        val appContext = context.applicationContext
+        val deletedIds = widgetIds.copyOf()
+        scope.launch {
+            runCatching {
+                ensureEngine(appContext).onWidgetsDeleted(deletedIds)
+            }.onFailure { error ->
+                GlobalState.log("Unable to clear deleted widget state: $error")
+            }
+        }
+    }
+
+    internal fun onConfigChanged(context: Context) {
         val appContext = context.applicationContext
         scope.launch {
             runCatching {
                 ensureEngine(appContext).refreshNow()
             }.onFailure { error ->
-                GlobalState.log("Unable to refresh widgets after theme change: $error")
+                GlobalState.log("Unable to refresh widgets after configuration change: $error")
             }
         }
+    }
+
+    internal fun onNightModeChanged(context: Context) {
+        onConfigChanged(context)
     }
 
     internal suspend fun handleProviderUpdate(
         context: Context,
         kind: WidgetKind,
         widgetIds: IntArray,
+        optionsByWidgetId: Map<Int, WidgetOptionsSnapshot> = emptyMap(),
     ) = withContext(serialDispatcher) {
         runCatching {
-            ensureEngine(context.applicationContext).renderKindNow(kind, widgetIds)
+            ensureEngine(context.applicationContext).renderKindNow(kind, widgetIds, optionsByWidgetId)
         }.onFailure { error ->
             GlobalState.log("Unable to render widget update: $error")
         }
@@ -362,14 +401,12 @@ object WidgetCoordinator {
     private fun registerConfigCallbacks(appContext: Context) {
         if (configCallbacksRegistered) return
         configCallbacksRegistered = true
-        var lastNightMode = appContext.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        val tracker = WidgetConfigChangeTracker(configSignature(appContext.resources.configuration))
         appContext.registerComponentCallbacks(
             object : ComponentCallbacks {
                 override fun onConfigurationChanged(newConfig: Configuration) {
-                    val nightMode = newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK
-                    if (nightMode == lastNightMode) return
-                    lastNightMode = nightMode
-                    onNightModeChanged(appContext)
+                    if (!tracker.shouldRefresh(configSignature(newConfig))) return
+                    onConfigChanged(appContext)
                 }
 
                 @Deprecated("Deprecated in Java")
@@ -377,6 +414,14 @@ object WidgetCoordinator {
             },
         )
     }
+
+    private fun configSignature(config: Configuration): WidgetConfigSignature =
+        WidgetConfigSignature(
+            nightMode = config.uiMode and Configuration.UI_MODE_NIGHT_MASK,
+            densityDpi = config.densityDpi,
+            fontScale = config.fontScale,
+            orientation = config.orientation,
+        )
 }
 
 private class AndroidWidgetCoordinatorHost(
@@ -384,6 +429,8 @@ private class AndroidWidgetCoordinatorHost(
     private val pluginRef: AtomicReference<WidgetPlugin?>,
     private val gson: Gson,
 ) : WidgetCoordinatorHost {
+    private val cachedOptions = ConcurrentHashMap<Int, WidgetOptionsSnapshot>()
+
     override val runState: StateFlow<RunState>
         get() = ServiceState.runState
 
@@ -444,6 +491,7 @@ private class AndroidWidgetCoordinatorHost(
                 traffic = traffic,
                 history = history,
                 startedAtMillis = startedAtMillis,
+                optionsProvider = { id -> resolveOptions(manager, id, null) },
             )
         }
     }
@@ -456,6 +504,7 @@ private class AndroidWidgetCoordinatorHost(
         traffic: Traffic,
         history: List<Traffic>,
         startedAtMillis: Long,
+        optionsByWidgetId: Map<Int, WidgetOptionsSnapshot>,
     ) {
         val manager = AppWidgetManager.getInstance(context)
         WidgetRenderer.bind(
@@ -468,11 +517,35 @@ private class AndroidWidgetCoordinatorHost(
             traffic = traffic,
             history = history,
             startedAtMillis = startedAtMillis,
+            optionsProvider = { id -> resolveOptions(manager, id, optionsByWidgetId[id]) },
         )
     }
 
     override fun onWidgetsActiveChanged(active: Boolean) {
         pluginRef.get()?.notifyWidgetsActiveChanged(active)
+    }
+
+    override fun onWidgetsDeleted(widgetIds: IntArray) {
+        for (id in widgetIds) {
+            cachedOptions.remove(id)
+        }
+    }
+
+    private fun resolveOptions(
+        manager: AppWidgetManager,
+        widgetId: Int,
+        overrideOptions: WidgetOptionsSnapshot?,
+    ): WidgetOptionsSnapshot {
+        if (overrideOptions != null && overrideOptions.hasAnyDimension()) {
+            cachedOptions[widgetId] = overrideOptions
+            return overrideOptions
+        }
+        val live = WidgetRenderer.extractOptionsSnapshot(manager.getAppWidgetOptions(widgetId))
+        if (live.hasAnyDimension()) {
+            cachedOptions[widgetId] = live
+            return live
+        }
+        return cachedOptions[widgetId] ?: WidgetOptionsSnapshot()
     }
 
     private fun isScreenInteractive(): Boolean =

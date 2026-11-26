@@ -9,9 +9,13 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Build
+import android.os.Bundle
 import android.os.SystemClock
+import android.util.SizeF
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
+import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import com.follow.clash.R
 import com.follow.clash.RunState
@@ -23,6 +27,7 @@ import com.follow.clash.models.WidgetPendingAction
 import com.follow.clash.models.WidgetSnapshot
 import com.follow.clash.service.models.Traffic
 import java.util.Locale
+import kotlin.math.roundToInt
 
 internal enum class WidgetKind(
     val layoutId: Int,
@@ -259,12 +264,55 @@ internal object WidgetDisplayReducer {
     }
 }
 
+private data class ChartCacheKey(
+    val widthPx: Int,
+    val heightPx: Int,
+    val topPaddingPx: Int,
+    val downStrokeTenths: Int,
+)
+
 internal object WidgetRenderer {
     private const val REQUEST_OPEN_APP = 100
     private const val REQUEST_TOGGLE = 101
     private const val REQUEST_CYCLE_MODE = 102
     private const val REQUEST_SELECT_PROXY = 103
     private const val PURE_BLACK_BLOCK_COLOR = 0xFF1C1C1E.toInt()
+
+    fun extractOptionsSnapshot(options: Bundle?): WidgetOptionsSnapshot {
+        if (options == null) return WidgetOptionsSnapshot()
+        val explicitSizes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            extractExplicitSizes(options)
+        } else {
+            emptyList()
+        }
+        return WidgetOptionsSnapshot(
+            explicitSizes = explicitSizes,
+            minWidthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0),
+            maxWidthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 0),
+            minHeightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0),
+            maxHeightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0),
+        )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun extractExplicitSizes(options: Bundle): List<WidgetSizeDp> {
+        val rawSizes: List<SizeF?>? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            options.getParcelableArrayList(
+                AppWidgetManager.OPTION_APPWIDGET_SIZES,
+                SizeF::class.java,
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            options.getParcelableArrayList(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+        }
+        return rawSizes?.mapNotNull { size ->
+            if (size != null && size.width > 0f && size.height > 0f) {
+                WidgetSizeDp(widthDp = size.width, heightDp = size.height)
+            } else {
+                null
+            }
+        } ?: emptyList()
+    }
 
     fun bind(
         context: Context,
@@ -276,9 +324,19 @@ internal object WidgetRenderer {
         traffic: Traffic,
         history: List<Traffic>,
         startedAtMillis: Long = 0L,
+        optionsProvider: (Int) -> WidgetOptionsSnapshot = { id ->
+            extractOptionsSnapshot(manager.getAppWidgetOptions(id))
+        },
     ) {
         if (widgetIds.isEmpty()) return
         val isDark = isDarkMode(context)
+        val density = context.resources.displayMetrics.density.takeIf { it.isFinite() && it > 0f } ?: 1f
+        val fontScale = context.resources.configuration.fontScale.takeIf { it.isFinite() && it > 0f } ?: 1f
+        val isLandscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val isRtl = context.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        val supportsMultiSize = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        val systemOuterRadiusDp = resolveSystemOuterRadiusDp(context, density)
+
         val model = WidgetDisplayReducer.reduce(
             kind = kind,
             runState = runState,
@@ -294,30 +352,15 @@ internal object WidgetRenderer {
         }
         val upColor = ContextCompat.getColor(context, R.color.widget_chart_up)
 
-        val chartBitmap = if (kind.hasTrafficCard && model.status == WidgetVisualStatus.STARTED) {
-            val (chartWidth, chartHeight) = if (kind == WidgetKind.COMPACT_2X2) {
-                WidgetChartRenderer.COMPACT_WIDTH to WidgetChartRenderer.COMPACT_HEIGHT
-            } else {
-                WidgetChartRenderer.WIDE_WIDTH to WidgetChartRenderer.WIDE_HEIGHT
-            }
-            WidgetChartRenderer.render(
-                samples = history,
-                downColor = downColor,
-                upColor = upColor,
-                isDark = isDark,
-                width = chartWidth,
-                height = chartHeight,
-            )
-        } else {
-            null
-        }
-
         val sparkBarsBitmap = if (kind == WidgetKind.BAR_4X1 && model.status == WidgetVisualStatus.STARTED) {
+            val (sparkW, sparkH) = WidgetChartRenderer.resolveSparkBarsSize(density)
             WidgetChartRenderer.renderSparkBars(
                 samples = history,
                 downColor = downColor,
                 upColor = upColor,
                 isDark = isDark,
+                width = sparkW,
+                height = sparkH,
             )
         } else {
             null
@@ -333,69 +376,149 @@ internal object WidgetRenderer {
             null
         }
 
+        val chartCache = HashMap<ChartCacheKey, Bitmap?>()
+        fun chartFor(spec: WidgetLayoutSpec): Bitmap? {
+            if (!kind.hasTrafficCard || !spec.showChart || model.status != WidgetVisualStatus.STARTED) {
+                return null
+            }
+            val chartSpec = WidgetChartRenderer.resolveChartSpec(spec, density, fontScale) ?: return null
+            val key = ChartCacheKey(
+                widthPx = chartSpec.widthPx,
+                heightPx = chartSpec.heightPx,
+                topPaddingPx = chartSpec.topPaddingPx.roundToInt(),
+                downStrokeTenths = (chartSpec.downStrokePx * 10f).roundToInt(),
+            )
+            return chartCache.getOrPut(key) {
+                WidgetChartRenderer.render(
+                    samples = history,
+                    downColor = downColor,
+                    upColor = upColor,
+                    isDark = isDark,
+                    spec = chartSpec,
+                )
+            }
+        }
+
         try {
-            if (kind == WidgetKind.WIDE_4X2) {
-                for (id in widgetIds) {
-                    val widthDp = manager.getAppWidgetOptions(id)
-                        .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
-                    val views = buildRemoteViews(
+            for (id in widgetIds) {
+                val options = optionsProvider(id)
+                val sizes = WidgetSizingResolver.resolveSizes(
+                    kind = kind,
+                    options = options,
+                    isLandscape = isLandscape,
+                    supportsMultiSizeRemoteViews = supportsMultiSize,
+                )
+                val views = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && sizes.size > 1) {
+                    buildResponsiveRemoteViews(
                         context = context,
                         kind = kind,
+                        sizes = sizes,
                         snapshot = snapshot,
                         model = model,
                         isDark = isDark,
-                        chartBitmap = chartBitmap,
+                        density = density,
+                        isRtl = isRtl,
+                        systemOuterRadiusDp = systemOuterRadiusDp,
+                        chartFor = ::chartFor,
                         sparkBarsBitmap = sparkBarsBitmap,
                         chronometerBase = chronometerBase,
-                        widthDp = widthDp,
                     )
-                    manager.updateAppWidget(id, views)
+                } else {
+                    val primarySize = sizes.first()
+                    val spec = WidgetLayoutSpecResolver.resolve(
+                        kind = kind,
+                        size = primarySize,
+                        supportsDynamicLayoutParams = supportsMultiSize,
+                    )
+                    buildRemoteViewsForSize(
+                        context = context,
+                        kind = kind,
+                        size = primarySize,
+                        snapshot = snapshot,
+                        model = model,
+                        isDark = isDark,
+                        density = density,
+                        isRtl = isRtl,
+                        systemOuterRadiusDp = systemOuterRadiusDp,
+                        chartBitmap = chartFor(spec),
+                        sparkBarsBitmap = sparkBarsBitmap,
+                        chronometerBase = chronometerBase,
+                        resolvedSpec = spec,
+                    )
                 }
-            } else {
-                val views = buildRemoteViews(
-                    context = context,
-                    kind = kind,
-                    snapshot = snapshot,
-                    model = model,
-                    isDark = isDark,
-                    chartBitmap = chartBitmap,
-                    sparkBarsBitmap = sparkBarsBitmap,
-                    chronometerBase = chronometerBase,
-                    widthDp = 0,
-                )
-                for (id in widgetIds) {
-                    manager.updateAppWidget(id, views)
-                }
+                manager.updateAppWidget(id, views)
             }
         } finally {
-            chartBitmap?.recycle()
+            chartCache.values.forEach { it?.recycle() }
             sparkBarsBitmap?.recycle()
         }
     }
 
-    private fun buildRemoteViews(
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun buildResponsiveRemoteViews(
         context: Context,
         kind: WidgetKind,
+        sizes: List<WidgetSizeDp>,
         snapshot: WidgetSnapshot,
         model: WidgetDisplayModel,
         isDark: Boolean,
+        density: Float,
+        isRtl: Boolean,
+        systemOuterRadiusDp: Float,
+        chartFor: (WidgetLayoutSpec) -> Bitmap?,
+        sparkBarsBitmap: Bitmap?,
+        chronometerBase: Long?,
+    ): RemoteViews {
+        val viewsBySize = LinkedHashMap<SizeF, RemoteViews>(sizes.size)
+        for (size in sizes) {
+            val spec = WidgetLayoutSpecResolver.resolve(kind, size)
+            viewsBySize[SizeF(size.widthDp, size.heightDp)] = buildRemoteViewsForSize(
+                context = context,
+                kind = kind,
+                size = size,
+                snapshot = snapshot,
+                model = model,
+                isDark = isDark,
+                density = density,
+                isRtl = isRtl,
+                systemOuterRadiusDp = systemOuterRadiusDp,
+                chartBitmap = chartFor(spec),
+                sparkBarsBitmap = sparkBarsBitmap,
+                chronometerBase = chronometerBase,
+                resolvedSpec = spec,
+            )
+        }
+        return RemoteViews(viewsBySize)
+    }
+
+    private fun buildRemoteViewsForSize(
+        context: Context,
+        kind: WidgetKind,
+        size: WidgetSizeDp,
+        snapshot: WidgetSnapshot,
+        model: WidgetDisplayModel,
+        isDark: Boolean,
+        density: Float,
+        isRtl: Boolean,
+        systemOuterRadiusDp: Float,
         chartBitmap: Bitmap?,
         sparkBarsBitmap: Bitmap?,
         chronometerBase: Long?,
-        widthDp: Int,
+        resolvedSpec: WidgetLayoutSpec,
     ): RemoteViews {
         val views = RemoteViews(context.packageName, kind.layoutId)
+        val radii = WidgetRadiusResolver.resolve(
+            kind = kind,
+            size = size,
+            systemOuterRadiusDp = systemOuterRadiusDp,
+            innerInsetDp = resolvedSpec.innerRadiusInsetDp,
+        )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val cardTintDark = if (snapshot.pureBlack) ColorStateList.valueOf(Color.BLACK) else null
-            val blockTintDark = if (snapshot.pureBlack) ColorStateList.valueOf(PURE_BLACK_BLOCK_COLOR) else null
-            setDarkOnlyBackgroundTint(views, android.R.id.background, cardTintDark)
-            setDarkOnlyBackgroundTint(views, R.id.widget_mode_button, blockTintDark)
-            if (kind.hasTrafficCard) {
-                setDarkOnlyBackgroundTint(views, R.id.widget_traffic_card, blockTintDark)
-                setDarkOnlyBackgroundTint(views, R.id.widget_node_button, blockTintDark)
-            }
+            applyDynamicSurfacesAndRadii(views, kind, radii, snapshot.pureBlack)
         }
+
+        applyLayoutSpec(views, resolvedSpec, density, isRtl)
 
         val glyphRes = when (model.status) {
             WidgetVisualStatus.STARTED, WidgetVisualStatus.STARTING -> R.drawable.ic_widget_glyph
@@ -518,7 +641,7 @@ internal object WidgetRenderer {
                 isRunning = model.status == WidgetVisualStatus.STARTED,
                 hasChronometerBase = chronometerBase != null,
                 tunEnabled = snapshot.tunEnabled,
-                widthDp = widthDp,
+                widthDp = size.widthDp.roundToInt(),
             )
             if (headerVisibility.showChronometer && chronometerBase != null) {
                 views.setChronometer(R.id.widget_chronometer, chronometerBase, null, true)
@@ -558,7 +681,8 @@ internal object WidgetRenderer {
                 views.setViewVisibility(R.id.widget_speed_idle, View.GONE)
             } else {
                 views.setViewVisibility(R.id.widget_speed_primary, View.GONE)
-                if (sparkBarsBitmap != null) {
+                val barSpec = resolvedSpec as Bar4x1LayoutSpec
+                if (barSpec.showSparkBars && sparkBarsBitmap != null) {
                     views.setImageViewBitmap(R.id.widget_spark_bars, sparkBarsBitmap)
                     views.setViewVisibility(R.id.widget_spark_bars, View.VISIBLE)
                 } else {
@@ -571,9 +695,14 @@ internal object WidgetRenderer {
             if (kind.hasTrafficCard) {
                 views.setViewVisibility(R.id.widget_speed_idle, View.VISIBLE)
                 views.setTextViewText(R.id.widget_speed_secondary, model.secondaryLine)
+                val allowSecondary = when (resolvedSpec) {
+                    is Compact2x2LayoutSpec -> resolvedSpec.showIdleSecondary
+                    is Wide4x2LayoutSpec -> resolvedSpec.showIdleSecondary
+                    is Bar4x1LayoutSpec -> false
+                }
                 views.setViewVisibility(
                     R.id.widget_speed_secondary,
-                    if (model.secondaryLine.isNotBlank()) View.VISIBLE else View.GONE,
+                    if (allowSecondary && model.secondaryLine.isNotBlank()) View.VISIBLE else View.GONE,
                 )
             } else {
                 views.setViewVisibility(R.id.widget_speed_primary, View.VISIBLE)
@@ -620,6 +749,260 @@ internal object WidgetRenderer {
         }
 
         return views
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun applyDynamicSurfacesAndRadii(
+        views: RemoteViews,
+        kind: WidgetKind,
+        radii: WidgetCornerRadii,
+        pureBlack: Boolean,
+    ) {
+        // Switch to square-cornered drawables so setViewOutlinePreferredRadius governs exact clipping without XML double-clipping.
+        views.setInt(android.R.id.background, "setBackgroundResource", R.drawable.widget_bg_card_surface)
+        views.setViewOutlinePreferredRadius(
+            android.R.id.background,
+            radii.outerRadiusDp,
+            TypedValue.COMPLEX_UNIT_DIP,
+        )
+        applyBlockSurface(views, R.id.widget_mode_button, radii.innerRadiusDp)
+        if (kind.hasTrafficCard) {
+            applyBlockSurface(views, R.id.widget_traffic_card, radii.innerRadiusDp)
+            applyBlockSurface(views, R.id.widget_node_button, radii.innerRadiusDp)
+        }
+
+        val cardTintDark = if (pureBlack) ColorStateList.valueOf(Color.BLACK) else null
+        val blockTintDark = if (pureBlack) ColorStateList.valueOf(PURE_BLACK_BLOCK_COLOR) else null
+        setDarkOnlyBackgroundTint(views, android.R.id.background, cardTintDark)
+        setDarkOnlyBackgroundTint(views, R.id.widget_mode_button, blockTintDark)
+        if (kind.hasTrafficCard) {
+            setDarkOnlyBackgroundTint(views, R.id.widget_traffic_card, blockTintDark)
+            setDarkOnlyBackgroundTint(views, R.id.widget_node_button, blockTintDark)
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun applyBlockSurface(
+        views: RemoteViews,
+        viewId: Int,
+        radiusDp: Float,
+    ) {
+        views.setInt(viewId, "setBackgroundResource", R.drawable.widget_bg_block_surface)
+        views.setViewOutlinePreferredRadius(viewId, radiusDp, TypedValue.COMPLEX_UNIT_DIP)
+    }
+
+    private fun applyLayoutSpec(
+        views: RemoteViews,
+        spec: WidgetLayoutSpec,
+        density: Float,
+        isRtl: Boolean,
+    ) {
+        val rootPadH = dpToPx(spec.cardPaddingHorizontalDp, density)
+        val rootPadV = dpToPx(spec.cardPaddingVerticalDp, density)
+        views.setViewPadding(android.R.id.background, rootPadH, rootPadV, rootPadH, rootPadV)
+
+        views.setViewVisibility(R.id.widget_glyph, if (spec.showGlyph) View.VISIBLE else View.GONE)
+        views.setViewVisibility(R.id.widget_mode_text, if (spec.showModeText) View.VISIBLE else View.GONE)
+        views.setTextViewTextSize(R.id.widget_mode_text, TypedValue.COMPLEX_UNIT_SP, spec.modeTextSp)
+
+        views.setTextViewTextSize(R.id.widget_down_value, TypedValue.COMPLEX_UNIT_SP, spec.downValueSp)
+        views.setTextViewTextSize(R.id.widget_down_arrow, TypedValue.COMPLEX_UNIT_SP, spec.downArrowSp)
+        views.setTextViewTextSize(R.id.widget_down_unit, TypedValue.COMPLEX_UNIT_SP, spec.downUnitSp)
+        views.setTextViewTextSize(R.id.widget_up_value, TypedValue.COMPLEX_UNIT_SP, spec.upValueSp)
+        views.setTextViewTextSize(R.id.widget_up_arrow, TypedValue.COMPLEX_UNIT_SP, spec.upArrowSp)
+        views.setTextViewTextSize(R.id.widget_up_unit, TypedValue.COMPLEX_UNIT_SP, spec.upUnitSp)
+        views.setTextViewTextSize(R.id.widget_speed_primary, TypedValue.COMPLEX_UNIT_SP, spec.idlePrimarySp)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            setViewSquareSizeDp(views, R.id.widget_glyph, spec.glyphSizeDp)
+            setViewSquareSizeDp(views, R.id.widget_toggle_button, spec.toggleSizeDp)
+            setViewSquareSizeDp(views, R.id.widget_toggle_icon, spec.toggleIconSizeDp)
+            setViewSquareSizeDp(views, R.id.widget_toggle_progress, spec.toggleProgressSizeDp)
+            views.setViewLayoutMargin(
+                R.id.widget_mode_icon,
+                RemoteViews.MARGIN_END,
+                if (spec.showModeText) spec.modeIconGapDp else 0f,
+                TypedValue.COMPLEX_UNIT_DIP,
+            )
+            val modePadH = dpToPx(
+                if (spec.showModeText) spec.modePaddingHorizontalDp else spec.modeIconOnlyPaddingHorizontalDp,
+                density,
+            )
+            views.setViewPadding(R.id.widget_mode_button, modePadH, 0, modePadH, 0)
+        } else {
+            if (spec.showModeText) {
+                val modePadH = dpToPx(spec.modePaddingHorizontalDp, density)
+                views.setViewPadding(R.id.widget_mode_button, modePadH, 0, modePadH, 0)
+            } else {
+                val startPx = dpToPx(spec.modeIconOnlyPaddingHorizontalDp, density)
+                val endPx = dpToPx(
+                    (spec.modeIconOnlyPaddingHorizontalDp - spec.modeIconGapDp).coerceAtLeast(0f),
+                    density,
+                )
+                setViewPaddingRelative(views, R.id.widget_mode_button, startPx, 0, endPx, 0, isRtl)
+            }
+        }
+
+        when (spec) {
+            is Compact2x2LayoutSpec -> applyCompact2x2Spec(views, spec, density, isRtl)
+            is Wide4x2LayoutSpec -> applyWide4x2Spec(views, spec, density)
+            is Bar4x1LayoutSpec -> applyBar4x1Spec(views, spec)
+        }
+    }
+
+    private fun applyCompact2x2Spec(
+        views: RemoteViews,
+        spec: Compact2x2LayoutSpec,
+        density: Float,
+        isRtl: Boolean,
+    ) {
+        val badgePadH = dpToPx(spec.statusBadgePaddingHorizontalDp, density)
+        views.setViewPadding(R.id.widget_status_badge, badgePadH, 0, badgePadH, 0)
+        views.setTextViewTextSize(R.id.widget_status_text, TypedValue.COMPLEX_UNIT_SP, spec.statusTextSp)
+
+        val trafficPadH = dpToPx(spec.trafficPaddingHorizontalDp, density)
+        val trafficPadTop = dpToPx(spec.trafficPaddingTopDp, density)
+        val trafficPadBottom = dpToPx(spec.trafficPaddingBottomDp, density)
+        views.setViewPadding(R.id.widget_traffic_content, trafficPadH, trafficPadTop, trafficPadH, trafficPadBottom)
+        views.setViewVisibility(R.id.widget_speed_up_row, if (spec.showUploadRow) View.VISIBLE else View.GONE)
+        views.setTextViewTextSize(R.id.widget_speed_secondary, TypedValue.COMPLEX_UNIT_SP, spec.idleSecondarySp)
+
+        setViewPaddingRelative(
+            views = views,
+            viewId = R.id.widget_node_button,
+            startPx = dpToPx(spec.nodePaddingStartDp, density),
+            topPx = 0,
+            endPx = dpToPx(spec.nodePaddingEndDp, density),
+            bottomPx = 0,
+            isRtl = isRtl,
+        )
+        views.setTextViewTextSize(R.id.widget_node_text, TypedValue.COMPLEX_UNIT_SP, spec.nodeTextSp)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            views.setInt(R.id.widget_mode_button, "setMinimumWidth", dpToPx(spec.modeMinWidthDp, density))
+            views.setViewLayoutHeight(R.id.widget_header, spec.headerHeightDp, TypedValue.COMPLEX_UNIT_DIP)
+            views.setViewLayoutHeight(R.id.widget_status_badge, spec.statusBadgeHeightDp, TypedValue.COMPLEX_UNIT_DIP)
+            views.setViewLayoutMargin(
+                R.id.widget_traffic_card,
+                RemoteViews.MARGIN_TOP,
+                spec.sectionGapDp,
+                TypedValue.COMPLEX_UNIT_DIP,
+            )
+            views.setViewLayoutMargin(
+                R.id.widget_traffic_card,
+                RemoteViews.MARGIN_BOTTOM,
+                spec.sectionGapDp,
+                TypedValue.COMPLEX_UNIT_DIP,
+            )
+            views.setViewLayoutHeight(R.id.widget_footer, spec.footerHeightDp, TypedValue.COMPLEX_UNIT_DIP)
+        }
+    }
+
+    private fun applyWide4x2Spec(
+        views: RemoteViews,
+        spec: Wide4x2LayoutSpec,
+        density: Float,
+    ) {
+        val badgePadH = dpToPx(spec.statusBadgePaddingHorizontalDp, density)
+        views.setViewPadding(R.id.widget_status_badge, badgePadH, 0, badgePadH, 0)
+        views.setTextViewTextSize(R.id.widget_status_text, TypedValue.COMPLEX_UNIT_SP, spec.statusTextSp)
+
+        val trafficPadH = dpToPx(spec.trafficPaddingHorizontalDp, density)
+        val trafficPadTop = dpToPx(spec.trafficPaddingTopDp, density)
+        val trafficPadBottom = dpToPx(spec.trafficPaddingBottomDp, density)
+        views.setViewPadding(R.id.widget_traffic_content, trafficPadH, trafficPadTop, trafficPadH, trafficPadBottom)
+        views.setViewVisibility(R.id.widget_speed_up_row, if (spec.showUploadRow) View.VISIBLE else View.GONE)
+        views.setTextViewTextSize(R.id.widget_speed_secondary, TypedValue.COMPLEX_UNIT_SP, spec.idleSecondarySp)
+
+        val nodePadH = dpToPx(spec.nodePaddingHorizontalDp, density)
+        val nodePadV = dpToPx(spec.nodePaddingVerticalDp, density)
+        views.setViewPadding(R.id.widget_node_button, nodePadH, nodePadV, nodePadH, nodePadV)
+        views.setTextViewTextSize(R.id.widget_group_text, TypedValue.COMPLEX_UNIT_SP, spec.groupTextSp)
+        views.setTextViewTextSize(R.id.widget_node_text, TypedValue.COMPLEX_UNIT_SP, spec.nodeTextSp)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            views.setViewLayoutHeight(R.id.widget_header, spec.headerHeightDp, TypedValue.COMPLEX_UNIT_DIP)
+            views.setViewLayoutHeight(R.id.widget_status_badge, spec.statusBadgeHeightDp, TypedValue.COMPLEX_UNIT_DIP)
+            views.setViewLayoutHeight(R.id.widget_mode_button, spec.modeButtonHeightDp, TypedValue.COMPLEX_UNIT_DIP)
+            views.setViewLayoutMargin(
+                R.id.widget_body,
+                RemoteViews.MARGIN_TOP,
+                spec.bodyTopGapDp,
+                TypedValue.COMPLEX_UNIT_DIP,
+            )
+            views.setViewLayoutMargin(
+                R.id.widget_traffic_card,
+                RemoteViews.MARGIN_END,
+                spec.bodyColumnGapDp,
+                TypedValue.COMPLEX_UNIT_DIP,
+            )
+        }
+    }
+
+    private fun applyBar4x1Spec(
+        views: RemoteViews,
+        spec: Bar4x1LayoutSpec,
+    ) {
+        views.setTextViewTextSize(R.id.widget_status_text, TypedValue.COMPLEX_UNIT_SP, spec.statusTextSp)
+        views.setTextViewTextSize(R.id.widget_bar_node_text, TypedValue.COMPLEX_UNIT_SP, spec.barNodeTextSp)
+        val upVisibility = if (spec.showUploadRow) View.VISIBLE else View.GONE
+        views.setViewVisibility(R.id.widget_up_arrow, upVisibility)
+        views.setViewVisibility(R.id.widget_up_value, upVisibility)
+        views.setViewVisibility(R.id.widget_up_unit, upVisibility)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            views.setViewLayoutHeight(R.id.widget_mode_button, spec.modeButtonHeightDp, TypedValue.COMPLEX_UNIT_DIP)
+            views.setViewLayoutMargin(
+                R.id.widget_mode_button,
+                RemoteViews.MARGIN_END,
+                spec.actionGapDp,
+                TypedValue.COMPLEX_UNIT_DIP,
+            )
+            views.setViewLayoutMargin(
+                R.id.widget_open_app,
+                RemoteViews.MARGIN_END,
+                spec.actionGapDp,
+                TypedValue.COMPLEX_UNIT_DIP,
+            )
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun setViewSquareSizeDp(
+        views: RemoteViews,
+        viewId: Int,
+        sizeDp: Float,
+    ) {
+        views.setViewLayoutWidth(viewId, sizeDp, TypedValue.COMPLEX_UNIT_DIP)
+        views.setViewLayoutHeight(viewId, sizeDp, TypedValue.COMPLEX_UNIT_DIP)
+    }
+
+    private fun setViewPaddingRelative(
+        views: RemoteViews,
+        viewId: Int,
+        startPx: Int,
+        topPx: Int,
+        endPx: Int,
+        bottomPx: Int,
+        isRtl: Boolean,
+    ) {
+        if (isRtl) {
+            views.setViewPadding(viewId, endPx, topPx, startPx, bottomPx)
+        } else {
+            views.setViewPadding(viewId, startPx, topPx, endPx, bottomPx)
+        }
+    }
+
+    private fun dpToPx(dp: Float, density: Float): Int =
+        (dp * density).roundToInt().coerceAtLeast(0)
+
+    private fun resolveSystemOuterRadiusDp(context: Context, density: Float): Float {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return WidgetRadiusResolver.FALLBACK_OUTER_RADIUS_DP
+        }
+        return runCatching {
+            context.resources.getDimension(android.R.dimen.system_app_widget_background_radius) / density
+        }.getOrDefault(0f)
     }
 
     private fun openAppPendingIntent(context: Context): PendingIntent {

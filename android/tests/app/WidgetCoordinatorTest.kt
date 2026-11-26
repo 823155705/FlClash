@@ -45,6 +45,8 @@ private class FakeCoordinatorHost(
     val activeNotifications = mutableListOf<Boolean>()
     val renders = mutableListOf<RenderRecord>()
     val kindRenders = mutableListOf<Pair<WidgetKind, List<Int>>>()
+    val kindOptions = mutableListOf<Map<Int, WidgetOptionsSnapshot>>()
+    val deletedWidgetIds = mutableListOf<List<Int>>()
 
     override fun screenOnFlow(): Flow<Boolean> = screenState
         .onStart {
@@ -84,12 +86,18 @@ private class FakeCoordinatorHost(
         traffic: Traffic,
         history: List<Traffic>,
         startedAtMillis: Long,
+        optionsByWidgetId: Map<Int, WidgetOptionsSnapshot>,
     ) {
         kindRenders += kind to widgetIds.toList()
+        kindOptions += optionsByWidgetId
     }
 
     override fun onWidgetsActiveChanged(active: Boolean) {
         activeNotifications += active
+    }
+
+    override fun onWidgetsDeleted(widgetIds: IntArray) {
+        deletedWidgetIds += widgetIds.toList()
     }
 }
 
@@ -611,5 +619,64 @@ class WidgetCoordinatorTest {
         assertEquals(readsAfterStart, host.trafficReads)
         assertEquals(1, host.renders.last().historySize)
         engine.stop()
+    }
+
+    @Test
+    fun `renderKindNow forwards options snapshot and onWidgetsDeleted clears host state`() =
+        runTest(StandardTestDispatcher()) {
+            val host = FakeCoordinatorHost(
+                initialRunState = RunState.STARTED,
+                initialActive = true,
+                initialScreenOn = true,
+            )
+            val engine = WidgetCoordinatorEngine(host, WidgetStore(InMemoryStorage()), backgroundScope)
+            val options = WidgetOptionsSnapshot(
+                explicitSizes = listOf(WidgetSizeDp(140f, 140f), WidgetSizeDp(180f, 120f)),
+                minWidthDp = 140,
+                maxWidthDp = 180,
+                minHeightDp = 120,
+                maxHeightDp = 140,
+            )
+
+            engine.renderKindNow(
+                kind = WidgetKind.COMPACT_2X2,
+                widgetIds = intArrayOf(42),
+                optionsByWidgetId = mapOf(42 to options),
+            )
+            assertEquals(listOf(WidgetKind.COMPACT_2X2 to listOf(42)), host.kindRenders)
+            assertEquals(mapOf(42 to options), host.kindOptions.last())
+
+            host.active = false
+            engine.onWidgetsDeleted(intArrayOf(42))
+            assertEquals(listOf(listOf(42)), host.deletedWidgetIds)
+            assertEquals(listOf(true, false), host.activeNotifications)
+            engine.stop()
+        }
+
+    @Test
+    fun `config change tracker triggers refresh on night mode, density, font scale, and orientation`() {
+        val base = WidgetConfigSignature(
+            nightMode = 16,
+            densityDpi = 440,
+            fontScale = 1.0f,
+            orientation = 1,
+        )
+        val tracker = WidgetConfigChangeTracker(base)
+
+        assertFalse(tracker.shouldRefresh(base.copy()))
+        assertTrue(tracker.shouldRefresh(base.copy(nightMode = 32)))
+        assertFalse(tracker.shouldRefresh(base.copy(nightMode = 32)))
+        assertTrue(tracker.shouldRefresh(base.copy(nightMode = 32, densityDpi = 480)))
+        assertTrue(tracker.shouldRefresh(base.copy(nightMode = 32, densityDpi = 480, fontScale = 1.25f)))
+        assertTrue(
+            tracker.shouldRefresh(
+                base.copy(nightMode = 32, densityDpi = 480, fontScale = 1.25f, orientation = 2),
+            ),
+        )
+        assertFalse(
+            tracker.shouldRefresh(
+                base.copy(nightMode = 32, densityDpi = 480, fontScale = 1.25f, orientation = 2),
+            ),
+        )
     }
 }

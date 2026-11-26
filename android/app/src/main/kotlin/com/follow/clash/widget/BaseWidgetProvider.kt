@@ -25,7 +25,7 @@ abstract class BaseWidgetProvider internal constructor(
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         super.onDeleted(context, appWidgetIds)
-        WidgetCoordinator.onWidgetsChanged(context)
+        WidgetCoordinator.onWidgetsDeleted(context, appWidgetIds)
     }
 
     override fun onUpdate(
@@ -43,10 +43,19 @@ abstract class BaseWidgetProvider internal constructor(
         newOptions: Bundle,
     ) {
         super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
-        dispatchAsyncUpdate(context, intArrayOf(appWidgetId))
+        val snapshot = WidgetRenderer.extractOptionsSnapshot(newOptions)
+        dispatchAsyncUpdate(
+            context = context,
+            widgetIds = intArrayOf(appWidgetId),
+            optionsByWidgetId = mapOf(appWidgetId to snapshot),
+        )
     }
 
-    private fun dispatchAsyncUpdate(context: Context, widgetIds: IntArray) {
+    private fun dispatchAsyncUpdate(
+        context: Context,
+        widgetIds: IntArray,
+        optionsByWidgetId: Map<Int, WidgetOptionsSnapshot> = emptyMap(),
+    ) {
         val pendingResult = goAsync()
         val lease = BroadcastLease { pendingResult.finish() }
         val timeout = Runnable {
@@ -55,7 +64,7 @@ abstract class BaseWidgetProvider internal constructor(
         mainHandler.postDelayed(timeout, BROADCAST_TIMEOUT_MILLIS)
         GlobalState.launch {
             try {
-                WidgetCoordinator.handleProviderUpdate(context, kind, widgetIds)
+                WidgetCoordinator.handleProviderUpdate(context, kind, widgetIds, optionsByWidgetId)
             } finally {
                 mainHandler.removeCallbacks(timeout)
                 lease.release()

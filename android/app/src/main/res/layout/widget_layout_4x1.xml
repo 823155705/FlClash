@@ -10,7 +10,7 @@
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:paddingHorizontal="12dp"
-    android:paddingVertical="6dp"
+    android:paddingVertical="4dp"
     tools:targetApi="s">
 
     <LinearLayout
@@ -197,10 +197,11 @@
     <LinearLayout
         android:id="@+id/widget_mode_button"
         android:layout_width="wrap_content"
-        android:layout_height="34dp"
+        android:layout_height="32dp"
         android:layout_marginEnd="8dp"
         android:background="@drawable/widget_bg_block"
         android:clickable="true"
+        android:clipToOutline="true"
         android:focusable="true"
         android:gravity="center_vertical"
         android:orientation="horizontal"
@@ -229,8 +230,8 @@
 
     <FrameLayout
         android:id="@+id/widget_toggle_button"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
         android:background="@drawable/widget_toggle_bg_idle"
         android:clickable="true"
         android:contentDescription="@string/widget_a11y_toggle"

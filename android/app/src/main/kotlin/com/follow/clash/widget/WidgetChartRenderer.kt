@@ -9,6 +9,16 @@ import android.graphics.Path
 import android.graphics.Shader
 import com.follow.clash.service.models.Traffic
 import kotlin.math.max
+import kotlin.math.roundToInt
+
+internal data class WidgetChartSpec(
+    val widthPx: Int,
+    val heightPx: Int,
+    val topPaddingPx: Float,
+    val bottomPaddingPx: Float,
+    val downStrokePx: Float,
+    val upStrokePx: Float,
+)
 
 internal object WidgetChartRenderer {
     const val WIDE_WIDTH = 320
@@ -18,10 +28,121 @@ internal object WidgetChartRenderer {
     const val SPARK_BARS_WIDTH = 66
     const val SPARK_BARS_HEIGHT = 45
     const val SPARK_BAR_COUNT = 4
+    const val MAX_CHART_SIDE_PX = 512
+    const val MIN_CHART_WIDTH_PX = 96
+    const val MIN_CHART_HEIGHT_PX = 48
+    const val DOWN_STROKE_DP = 1.6f
+    const val UP_STROKE_DP = 1.1f
+    const val BOTTOM_PADDING_DP = 2f
+    const val TEXT_CHART_GAP_DP = 3f
+    const val MIN_DRAW_HEIGHT_DP = 10f
+    const val LINE_HEIGHT_MULTIPLIER = 1.15f
+    const val SPEED_ROW_GAP_DP = 2f
     private const val TOP_PADDING_RATIO = 0.55f
-    private const val BOTTOM_PADDING = 6f
+    private const val DEFAULT_BOTTOM_PADDING = 6f
+    private const val DEFAULT_DOWN_STROKE_PX = 4.2f
+    private const val DEFAULT_UP_STROKE_PX = 2.8f
     private const val MIN_SPARK_BAR_RATIO = 0.25f
     private val SPARK_BAR_ALPHAS = intArrayOf(140, 179, 217, 255)
+
+    fun resolveChartSpec(
+        layoutSpec: WidgetLayoutSpec,
+        density: Float,
+        fontScale: Float,
+    ): WidgetChartSpec? {
+        if (!layoutSpec.showChart) return null
+        return resolveChartSpec(
+            containerWidthDp = layoutSpec.trafficCardWidthDp,
+            containerHeightDp = layoutSpec.trafficCardHeightDp,
+            density = density,
+            fontScale = fontScale,
+            trafficPaddingTopDp = layoutSpec.trafficPaddingTopDp,
+            downValueSp = layoutSpec.downValueSp,
+            upValueSp = layoutSpec.upValueSp,
+            showUploadRow = layoutSpec.showUploadRow,
+        )
+    }
+
+    fun resolveChartSpec(
+        containerWidthDp: Float,
+        containerHeightDp: Float,
+        density: Float,
+        fontScale: Float,
+        trafficPaddingTopDp: Float,
+        downValueSp: Float,
+        upValueSp: Float,
+        showUploadRow: Boolean,
+    ): WidgetChartSpec? {
+        if (!containerWidthDp.isFinite() || !containerHeightDp.isFinite() || !density.isFinite()) return null
+        if (containerWidthDp <= 0f || containerHeightDp <= 0f || density <= 0f) return null
+
+        val safeFontScale = fontScale.takeIf { it.isFinite() && it > 0f } ?: 1f
+        val downLineDp = downValueSp * LINE_HEIGHT_MULTIPLIER * safeFontScale
+        val upLineDp = if (showUploadRow) {
+            SPEED_ROW_GAP_DP + upValueSp * LINE_HEIGHT_MULTIPLIER * safeFontScale
+        } else {
+            0f
+        }
+        val textBottomDp = trafficPaddingTopDp + downLineDp + upLineDp + TEXT_CHART_GAP_DP
+        val remainingDrawDp = containerHeightDp - textBottomDp - BOTTOM_PADDING_DP
+        if (remainingDrawDp < MIN_DRAW_HEIGHT_DP) return null
+
+        val rawWidthPx = containerWidthDp * density
+        val rawHeightPx = containerHeightDp * density
+        val maxRawSide = maxOf(rawWidthPx, rawHeightPx)
+        val downScale = if (maxRawSide > MAX_CHART_SIDE_PX) MAX_CHART_SIDE_PX / maxRawSide else 1f
+        val scaledW = rawWidthPx * downScale
+        val scaledH = rawHeightPx * downScale
+        val upScale = maxOf(
+            if (scaledW < MIN_CHART_WIDTH_PX) MIN_CHART_WIDTH_PX / scaledW else 1f,
+            if (scaledH < MIN_CHART_HEIGHT_PX) MIN_CHART_HEIGHT_PX / scaledH else 1f,
+        )
+        val finalScale = minOf(downScale * upScale, MAX_CHART_SIDE_PX / maxRawSide)
+        val widthPx = (rawWidthPx * finalScale).roundToInt().coerceIn(1, MAX_CHART_SIDE_PX)
+        val heightPx = (rawHeightPx * finalScale).roundToInt().coerceIn(1, MAX_CHART_SIDE_PX)
+
+        val effectiveDensityX = widthPx / containerWidthDp
+        val effectiveDensityY = heightPx / containerHeightDp
+        val strokeScale = minOf(effectiveDensityX, effectiveDensityY)
+        val topPaddingPx = (textBottomDp * effectiveDensityY).coerceIn(0f, heightPx - 1f)
+        val bottomPaddingPx = (BOTTOM_PADDING_DP * effectiveDensityY).coerceAtLeast(1f)
+        if (heightPx - topPaddingPx - bottomPaddingPx < 1f) return null
+
+        return WidgetChartSpec(
+            widthPx = widthPx,
+            heightPx = heightPx,
+            topPaddingPx = topPaddingPx,
+            bottomPaddingPx = bottomPaddingPx,
+            downStrokePx = (DOWN_STROKE_DP * strokeScale).coerceAtLeast(1.5f),
+            upStrokePx = (UP_STROKE_DP * strokeScale).coerceAtLeast(1f),
+        )
+    }
+
+    fun resolveSparkBarsSize(density: Float): Pair<Int, Int> {
+        val safeDensity = density.takeIf { it.isFinite() && it > 0f } ?: 3f
+        val width = (22f * safeDensity).roundToInt().coerceIn(44, 132)
+        val height = (15f * safeDensity).roundToInt().coerceIn(30, 90)
+        return width to height
+    }
+
+    fun render(
+        samples: List<Traffic>,
+        downColor: Int,
+        upColor: Int,
+        isDark: Boolean,
+        spec: WidgetChartSpec,
+    ): Bitmap? = render(
+        samples = samples,
+        downColor = downColor,
+        upColor = upColor,
+        isDark = isDark,
+        width = spec.widthPx,
+        height = spec.heightPx,
+        topPaddingPx = spec.topPaddingPx,
+        bottomPaddingPx = spec.bottomPaddingPx,
+        downStrokePx = spec.downStrokePx,
+        upStrokePx = spec.upStrokePx,
+    )
 
     fun render(
         samples: List<Traffic>,
@@ -30,15 +151,22 @@ internal object WidgetChartRenderer {
         isDark: Boolean,
         width: Int = WIDE_WIDTH,
         height: Int = WIDE_HEIGHT,
+        topPaddingPx: Float? = null,
+        bottomPaddingPx: Float = DEFAULT_BOTTOM_PADDING,
+        downStrokePx: Float = DEFAULT_DOWN_STROKE_PX,
+        upStrokePx: Float = DEFAULT_UP_STROKE_PX,
     ): Bitmap? {
         if (samples.size < 2 || width <= 0 || height <= 0) return null
         val peak = samples.maxOfOrNull { max(it.down, it.up) } ?: 0L
         if (peak <= 0L) return null
 
+        val topPadding = (topPaddingPx ?: (height * TOP_PADDING_RATIO)).coerceIn(0f, height.toFloat())
+        val bottomPadding = bottomPaddingPx.coerceAtLeast(0f)
+        if (topPaddingPx != null && height - topPadding - bottomPadding < 1f) return null
+
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        val topPadding = height * TOP_PADDING_RATIO
-        val drawHeight = (height - topPadding - BOTTOM_PADDING).coerceAtLeast(1f)
+        val drawHeight = (height - topPadding - bottomPadding).coerceAtLeast(1f)
         val stepX = width.toFloat() / (samples.size - 1).toFloat()
         val scaleY = peak.toFloat()
 
@@ -79,7 +207,7 @@ internal object WidgetChartRenderer {
 
         val upPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = 2.8f
+            strokeWidth = upStrokePx.coerceAtLeast(1f)
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
             color = withAlpha(upColor, if (isDark) 235 else 210)
@@ -88,7 +216,7 @@ internal object WidgetChartRenderer {
 
         val downPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = 4.2f
+            strokeWidth = downStrokePx.coerceAtLeast(1.5f)
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
             color = downColor

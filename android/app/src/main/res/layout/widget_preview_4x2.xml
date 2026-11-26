@@ -92,6 +92,7 @@
             android:layout_height="34dp"
             android:layout_marginEnd="6dp"
             android:background="@drawable/widget_bg_block"
+            android:clipToOutline="true"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingHorizontal="9dp">
@@ -249,6 +250,7 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="@drawable/widget_bg_block"
+            android:clipToOutline="true"
             android:gravity="center_vertical"
             android:orientation="vertical"
             android:paddingHorizontal="12dp"

@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="widget_surface_card">#252628</color>
-    <color name="widget_card_stroke">#14F5F6FF</color>
     <color name="widget_surface_block">#323235</color>
     <color name="widget_surface_inset">#404042</color>
     <color name="widget_primary">#2F83FF</color>

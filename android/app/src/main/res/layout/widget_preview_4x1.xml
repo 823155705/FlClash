@@ -10,7 +10,7 @@
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:paddingHorizontal="12dp"
-    android:paddingVertical="6dp"
+    android:paddingVertical="4dp"
     tools:targetApi="s">
 
     <LinearLayout
@@ -159,9 +159,10 @@
 
     <LinearLayout
         android:layout_width="wrap_content"
-        android:layout_height="34dp"
+        android:layout_height="32dp"
         android:layout_marginEnd="8dp"
         android:background="@drawable/widget_bg_block"
+        android:clipToOutline="true"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="10dp">
@@ -185,8 +186,8 @@
     </LinearLayout>
 
     <FrameLayout
-        android:layout_width="40dp"
-        android:layout_height="40dp"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
         android:background="@drawable/widget_toggle_bg_active">
 
         <ImageView
