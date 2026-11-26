@@ -45,21 +45,33 @@ struct TrayPanelView: View {
         return state.suspended ? theme.color(theme.warning) : theme.color(theme.success)
     }
 
+    private enum PanelLayout {
+        static let panelWidth: CGFloat = 348
+        static let outerPadding: CGFloat = 14
+        static let contentWidth: CGFloat = panelWidth - outerPadding * 2
+        static let scrollbarGutterWidth: CGFloat = outerPadding
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             headerSection
+                .padding(.horizontal, PanelLayout.outerPadding)
             outboundModeSection
+                .padding(.horizontal, PanelLayout.outerPadding)
             quickTogglesSection
+                .padding(.horizontal, PanelLayout.outerPadding)
             if !state.groups.isEmpty {
                 proxiesSection
             }
             Rectangle()
                 .fill(theme.color(theme.hairline))
                 .frame(height: 0.75)
+                .padding(.horizontal, PanelLayout.outerPadding)
             footerSection
+                .padding(.horizontal, PanelLayout.outerPadding)
         }
-        .padding(14)
-        .frame(width: 348)
+        .padding(.vertical, PanelLayout.outerPadding)
+        .frame(width: PanelLayout.panelWidth)
         .overlay(
             GeometryReader { geo in
                 Color.clear
@@ -297,7 +309,7 @@ struct TrayPanelView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(theme.color(theme.onSurfaceVariant))
 
-                Text("\(filteredGroups.count)")
+                Text(verbatim: "\(filteredGroups.count)")
                     .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
                     .foregroundColor(theme.color(theme.onSurfaceVariant))
                     .padding(.horizontal, 6)
@@ -356,6 +368,7 @@ struct TrayPanelView: View {
                 .buttonStyle(.plain)
                 .help(formatTooltip(labels.testAllDelays, shortcut: shortcuts.testAllDelays))
             }
+            .padding(.horizontal, PanelLayout.outerPadding)
 
             if store.isSearchVisible {
                 HStack(spacing: 6) {
@@ -385,6 +398,7 @@ struct TrayPanelView: View {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(theme.color(theme.insetBg))
                 )
+                .padding(.horizontal, PanelLayout.outerPadding)
             }
 
             if filteredGroups.isEmpty {
@@ -398,8 +412,14 @@ struct TrayPanelView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
+                .padding(.horizontal, PanelLayout.outerPadding)
             } else {
-                FittingGroupsScrollView(maxHeight: maxGroupsScrollHeight) {
+                FittingGroupsScrollView(
+                    contentWidth: PanelLayout.contentWidth,
+                    gutterWidth: PanelLayout.scrollbarGutterWidth,
+                    maxHeight: maxGroupsScrollHeight,
+                    thumbColor: theme.nsColor(theme.onSurfaceVariant)
+                ) {
                     VStack(spacing: 8) {
                         ForEach(filteredGroups, id: \.group.id) { entry in
                             ProxyGroupCard(
@@ -425,11 +445,11 @@ struct TrayPanelView: View {
                             )
                         }
                     }
-                    .frame(width: 320, alignment: .top)
+                    .frame(width: PanelLayout.contentWidth, alignment: .top)
                 }
-                .frame(width: 320)
+                .padding(.leading, PanelLayout.outerPadding)
+                .frame(width: PanelLayout.panelWidth, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
         }
     }
@@ -443,7 +463,7 @@ struct TrayPanelView: View {
                 HStack(spacing: 5) {
                     Image(systemName: store.copiedFeedback ? "checkmark" : "terminal")
                         .font(.system(size: 10.5, weight: .semibold))
-                    Text("\(labels.copyEnvVar) :\(state.port)")
+                    Text(verbatim: "\(labels.copyEnvVar) :\(state.port)")
                         .font(.system(size: 11, weight: .medium).monospacedDigit())
                         .lineLimit(1)
                     if !shortcuts.copyEnv.isEmpty && !store.copiedFeedback {
@@ -694,11 +714,14 @@ private struct ProxyGroupCard: View {
                             .font(.system(size: 12.5, weight: .semibold))
                             .foregroundColor(theme.color(theme.onSurface))
                             .lineLimit(1)
+                            .truncationMode(.tail)
 
                         if !group.type.isEmpty {
                             Text(group.type)
                                 .font(.system(size: 9.5, weight: .medium))
                                 .foregroundColor(theme.color(theme.onSurfaceVariant))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1.5)
                                 .background(
@@ -712,6 +735,7 @@ private struct ProxyGroupCard: View {
                         .font(.system(size: 11))
                         .foregroundColor(theme.color(theme.onSurfaceVariant))
                         .lineLimit(1)
+                        .truncationMode(.tail)
                 }
 
                 Spacer(minLength: 4)
@@ -883,6 +907,8 @@ private struct DelayBadge: View {
             Text(text)
                 .font(.system(size: compact ? 9.5 : 10, weight: .semibold).monospacedDigit())
                 .foregroundColor(color)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, compact ? 4 : 6)
                 .padding(.vertical, 1.5)
                 .background(
@@ -921,12 +947,338 @@ private struct TrayPanelContentHeightKey: PreferenceKey {
 }
 
 private final class FlippedGroupsDocumentView: NSView {
+    var onLayout: (() -> Void)?
+
     override var isFlipped: Bool { true }
+
+    override func layout() {
+        super.layout()
+        onLayout?()
+    }
 }
 
-private final class BoundedGroupsScrollView<Content: View>: NSScrollView {
+private final class GroupsScrollbarView: NSView {
+    private static let trackInsetY: CGFloat = 6
+    private static let minThumbHeight: CGFloat = 24
+    private static let minOverscrollThumbHeight: CGFloat = 18
+    private static let idleThumbWidth: CGFloat = 4
+    private static let activeThumbWidth: CGFloat = 6
+
+    var thumbColor: NSColor {
+        didSet {
+            applyColors()
+        }
+    }
+    var onScrollTo: ((CGFloat) -> Void)?
+    var onScrollWheel: ((NSEvent) -> Void)?
+
+    private let trackLayer = CALayer()
+    private let thumbLayer = CALayer()
+    private var trackingAreaRef: NSTrackingArea?
+    private var viewportHeight: CGFloat = 0
+    private var contentHeight: CGFloat = 0
+    private var scrollOffset: CGFloat = 0
+    private var isHovered = false
+    private var isDragging = false
+    private var isScrolling = false
+    private var dragStartY: CGFloat = 0
+    private var dragStartOffset: CGFloat = 0
+    private var scrollFadeWorkItem: DispatchWorkItem?
+
+    override var isFlipped: Bool { true }
+
+    init(thumbColor: NSColor) {
+        self.thumbColor = thumbColor
+        super.init(frame: .zero)
+        wantsLayer = true
+        ensureLayers()
+        applyColors()
+        isHidden = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    deinit {
+        scrollFadeWorkItem?.cancel()
+    }
+
+    private var scrollableDistance: CGFloat {
+        max(0, contentHeight - viewportHeight)
+    }
+
+    private var isScrollable: Bool {
+        scrollableDistance > 0.5 && viewportHeight > 1
+    }
+
+    private func ensureLayers() {
+        wantsLayer = true
+        guard let rootLayer = layer else {
+            return
+        }
+        rootLayer.masksToBounds = false
+        if trackLayer.superlayer == nil {
+            trackLayer.opacity = 0
+            rootLayer.addSublayer(trackLayer)
+        }
+        if thumbLayer.superlayer == nil {
+            thumbLayer.opacity = 0
+            rootLayer.addSublayer(thumbLayer)
+        }
+    }
+
+    private func applyColors() {
+        let base = thumbColor.cgColor
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        trackLayer.backgroundColor = base
+        thumbLayer.backgroundColor = base
+        CATransaction.commit()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingAreaRef {
+            removeTrackingArea(existing)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingAreaRef = area
+    }
+
+    override func layout() {
+        super.layout()
+        ensureLayers()
+        updateThumbLayout(animated: false)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard isScrollable else {
+            return nil
+        }
+        return super.hitTest(point)
+    }
+
+    func updateMetrics(viewportHeight: CGFloat, contentHeight: CGFloat, scrollOffset: CGFloat) {
+        self.viewportHeight = viewportHeight
+        self.contentHeight = contentHeight
+        self.scrollOffset = scrollOffset
+
+        let shouldShow = isScrollable
+        isHidden = !shouldShow
+        if !shouldShow {
+            scrollFadeWorkItem?.cancel()
+            isHovered = false
+            isDragging = false
+            isScrolling = false
+            updateAppearance(animated: false)
+            return
+        }
+
+        ensureLayers()
+        updateThumbLayout(animated: false)
+        updateAppearance(animated: false)
+    }
+
+    func noteScrollActivity() {
+        guard isScrollable else {
+            return
+        }
+        scrollFadeWorkItem?.cancel()
+        if !isScrolling {
+            isScrolling = true
+            updateAppearance(animated: true)
+        }
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self else {
+                return
+            }
+            self.isScrolling = false
+            self.updateAppearance(animated: true)
+        }
+        scrollFadeWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.75, execute: workItem)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard isScrollable else {
+            return
+        }
+        isHovered = true
+        updateThumbLayout(animated: true)
+        updateAppearance(animated: true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        if !isDragging {
+            updateThumbLayout(animated: true)
+            updateAppearance(animated: true)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isScrollable else {
+            return
+        }
+        let point = convert(event.locationInWindow, from: nil)
+        let metrics = computeThumbGeometry()
+        let usableTrack = max(1, metrics.trackHeight - metrics.thumbHeight)
+        isDragging = true
+
+        if point.y >= metrics.thumbY - 4 && point.y <= metrics.thumbY + metrics.thumbHeight + 4 {
+            dragStartY = point.y
+            dragStartOffset = min(max(scrollOffset, 0), scrollableDistance)
+        } else {
+            let clampedTop = min(
+                max(point.y - metrics.thumbHeight / 2, metrics.trackTop),
+                metrics.trackTop + usableTrack
+            )
+            let targetOffset = ((clampedTop - metrics.trackTop) / usableTrack) * scrollableDistance
+            dragStartY = point.y
+            dragStartOffset = targetOffset
+            onScrollTo?(targetOffset)
+        }
+        updateThumbLayout(animated: true)
+        updateAppearance(animated: true)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isDragging, isScrollable else {
+            return
+        }
+        let point = convert(event.locationInWindow, from: nil)
+        let metrics = computeThumbGeometry()
+        let usableTrack = max(1, metrics.trackHeight - metrics.thumbHeight)
+        let deltaY = point.y - dragStartY
+        let nextOffset = min(
+            max(dragStartOffset + (deltaY / usableTrack) * scrollableDistance, 0),
+            scrollableDistance
+        )
+        onScrollTo?(nextOffset)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard isDragging else {
+            return
+        }
+        isDragging = false
+        let point = convert(event.locationInWindow, from: nil)
+        isHovered = bounds.contains(point)
+        updateThumbLayout(animated: true)
+        updateAppearance(animated: true)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        onScrollWheel?(event)
+    }
+
+    private func computeThumbGeometry() -> (trackTop: CGFloat, trackHeight: CGFloat, thumbY: CGFloat, thumbHeight: CGFloat) {
+        let trackTop = Self.trackInsetY
+        let trackHeight = max(0, bounds.height - Self.trackInsetY * 2)
+        guard trackHeight > 0, scrollableDistance > 0.5 else {
+            return (trackTop, trackHeight, trackTop, 0)
+        }
+        let visibleRatio = min(1, viewportHeight / max(contentHeight, 1))
+        let baseHeight = max(Self.minThumbHeight, min(trackHeight, trackHeight * visibleRatio))
+        if scrollOffset < 0 {
+            let thumbHeight = max(Self.minOverscrollThumbHeight, baseHeight - (-scrollOffset) * 0.45)
+            return (trackTop, trackHeight, trackTop, thumbHeight)
+        }
+        if scrollOffset > scrollableDistance {
+            let overscroll = scrollOffset - scrollableDistance
+            let thumbHeight = max(Self.minOverscrollThumbHeight, baseHeight - overscroll * 0.45)
+            return (trackTop, trackHeight, trackTop + trackHeight - thumbHeight, thumbHeight)
+        }
+        let progress = scrollOffset / scrollableDistance
+        let thumbY = trackTop + progress * (trackHeight - baseHeight)
+        return (trackTop, trackHeight, thumbY, baseHeight)
+    }
+
+    private func updateThumbLayout(animated: Bool) {
+        guard let rootLayer = layer, isScrollable else {
+            return
+        }
+        let metrics = computeThumbGeometry()
+        let width = (isHovered || isDragging) ? Self.activeThumbWidth : Self.idleThumbWidth
+        let thumbX = round((bounds.width - width) * 0.5 * 2) / 2
+        let trackX = round((bounds.width - Self.activeThumbWidth) * 0.5 * 2) / 2
+
+        let flipped = rootLayer.isGeometryFlipped
+        let thumbFrameY = flipped ? metrics.thumbY : (bounds.height - metrics.thumbY - metrics.thumbHeight)
+        let trackFrameY = flipped ? metrics.trackTop : (bounds.height - metrics.trackTop - metrics.trackHeight)
+
+        CATransaction.begin()
+        if animated {
+            CATransaction.setAnimationDuration(0.14)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
+        } else {
+            CATransaction.setDisableActions(true)
+        }
+        trackLayer.frame = CGRect(
+            x: trackX,
+            y: trackFrameY,
+            width: Self.activeThumbWidth,
+            height: metrics.trackHeight
+        )
+        trackLayer.cornerRadius = Self.activeThumbWidth * 0.5
+        thumbLayer.frame = CGRect(
+            x: thumbX,
+            y: thumbFrameY,
+            width: width,
+            height: metrics.thumbHeight
+        )
+        thumbLayer.cornerRadius = width * 0.5
+        CATransaction.commit()
+    }
+
+    private func updateAppearance(animated: Bool) {
+        let thumbOpacity: Float
+        if !isScrollable {
+            thumbOpacity = 0
+        } else if isDragging {
+            thumbOpacity = 0.72
+        } else if isHovered {
+            thumbOpacity = 0.56
+        } else if isScrolling {
+            thumbOpacity = 0.48
+        } else {
+            thumbOpacity = 0.26
+        }
+        let trackOpacity: Float = (isScrollable && (isHovered || isDragging)) ? 0.12 : 0
+
+        CATransaction.begin()
+        if animated {
+            CATransaction.setAnimationDuration(0.16)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
+        } else {
+            CATransaction.setDisableActions(true)
+        }
+        thumbLayer.opacity = thumbOpacity
+        trackLayer.opacity = trackOpacity
+        CATransaction.commit()
+    }
+}
+
+private final class BoundedGroupsScrollView<Content: View>: NSView {
+    let scrollView = NSScrollView()
     let hostingView: NSHostingView<Content>
     private let documentContainer = FlippedGroupsDocumentView()
+    private let scrollbarView: GroupsScrollbarView
+    private let contentWidth: CGFloat
+    private let gutterWidth: CGFloat
+    private var boundsObserver: NSObjectProtocol?
+    private var liveScrollObserver: NSObjectProtocol?
+    private var lastObservedOffset: CGFloat = 0
+    private var isSyncingDocument = false
+
     var maxHeight: CGFloat {
         didSet {
             if abs(oldValue - maxHeight) > 0.5 {
@@ -935,23 +1287,46 @@ private final class BoundedGroupsScrollView<Content: View>: NSScrollView {
         }
     }
 
-    init(rootView: Content, maxHeight: CGFloat) {
+    init(
+        rootView: Content,
+        contentWidth: CGFloat,
+        gutterWidth: CGFloat,
+        maxHeight: CGFloat,
+        thumbColor: NSColor
+    ) {
         self.hostingView = NSHostingView(rootView: rootView)
+        self.contentWidth = contentWidth
+        self.gutterWidth = gutterWidth
         self.maxHeight = maxHeight
-        super.init(frame: NSRect(x: 0, y: 0, width: 320, height: 44))
+        self.scrollbarView = GroupsScrollbarView(thumbColor: thumbColor)
+        super.init(frame: NSRect(x: 0, y: 0, width: contentWidth + gutterWidth, height: 44))
+
         wantsLayer = true
-        layer?.cornerRadius = 14
-        layer?.cornerCurve = .continuous
-        layer?.masksToBounds = true
-        drawsBackground = false
-        borderType = .noBorder
-        hasVerticalScroller = true
-        hasHorizontalScroller = false
-        autohidesScrollers = true
-        scrollerStyle = .overlay
+        layer?.backgroundColor = NSColor.clear.cgColor
+
+        scrollView.frame = NSRect(x: 0, y: 0, width: contentWidth, height: 44)
+        scrollView.wantsLayer = true
+        scrollView.layer?.cornerRadius = 14
+        scrollView.layer?.cornerCurve = .continuous
+        scrollView.layer?.masksToBounds = true
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        // Hide AppKit's scroller so legacy/overlay styles cannot clip or overlap cards;
+        // scrollbarView renders in the outer margin gutter instead.
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.verticalScrollElasticity = .allowed
+        scrollView.horizontalScrollElasticity = .none
+        scrollView.contentView.postsBoundsChangedNotifications = true
+
         documentContainer.translatesAutoresizingMaskIntoConstraints = true
         documentContainer.autoresizingMask = [.width]
-        documentContainer.frame = NSRect(x: 0, y: 0, width: 320, height: 44)
+        documentContainer.frame = NSRect(x: 0, y: 0, width: contentWidth, height: 44)
+        documentContainer.onLayout = { [weak self] in
+            self?.handleDocumentLayout()
+        }
+
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         documentContainer.addSubview(hostingView)
         NSLayoutConstraint.activate([
@@ -959,7 +1334,33 @@ private final class BoundedGroupsScrollView<Content: View>: NSScrollView {
             hostingView.trailingAnchor.constraint(equalTo: documentContainer.trailingAnchor),
             hostingView.topAnchor.constraint(equalTo: documentContainer.topAnchor),
         ])
-        documentView = documentContainer
+        scrollView.documentView = documentContainer
+
+        scrollbarView.frame = NSRect(x: contentWidth, y: 0, width: gutterWidth, height: 44)
+        scrollbarView.onScrollTo = { [weak self] offset in
+            self?.scrollToOffset(offset)
+        }
+        scrollbarView.onScrollWheel = { [weak self] event in
+            self?.scrollView.scrollWheel(with: event)
+        }
+
+        addSubview(scrollView)
+        addSubview(scrollbarView)
+
+        boundsObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleClipBoundsChanged()
+        }
+        liveScrollObserver = NotificationCenter.default.addObserver(
+            forName: NSScrollView.didLiveScrollNotification,
+            object: scrollView,
+            queue: .main
+        ) { [weak self] _ in
+            self?.syncScrollbar(userScrolled: true)
+        }
     }
 
     @available(*, unavailable)
@@ -967,54 +1368,148 @@ private final class BoundedGroupsScrollView<Content: View>: NSScrollView {
         nil
     }
 
+    deinit {
+        if let observer = boundsObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = liveScrollObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    var totalWidth: CGFloat {
+        contentWidth + gutterWidth
+    }
+
     var measuredContentHeight: CGFloat {
         max(ceil(hostingView.fittingSize.height), 44)
     }
 
     override var intrinsicContentSize: NSSize {
-        let width = contentSize.width > 1 ? contentSize.width : (bounds.width > 1 ? bounds.width : 320)
-        return NSSize(width: width, height: min(measuredContentHeight, maxHeight))
+        NSSize(width: totalWidth, height: min(measuredContentHeight, maxHeight))
+    }
+
+    func updateThumbColor(_ color: NSColor) {
+        scrollbarView.thumbColor = color
     }
 
     override func layout() {
         super.layout()
+        let viewportWidth = max(1, min(contentWidth, bounds.width - gutterWidth))
+        let targetScrollFrame = NSRect(x: 0, y: 0, width: viewportWidth, height: bounds.height)
+        if scrollView.frame != targetScrollFrame {
+            scrollView.frame = targetScrollFrame
+        }
+        let targetBarFrame = NSRect(
+            x: viewportWidth,
+            y: 0,
+            width: max(0, bounds.width - viewportWidth),
+            height: bounds.height
+        )
+        if scrollbarView.frame != targetBarFrame {
+            scrollbarView.frame = targetBarFrame
+        }
         syncDocumentSize()
     }
 
+    private func handleDocumentLayout() {
+        guard !isSyncingDocument else {
+            return
+        }
+        let previousHeight = documentContainer.frame.height
+        syncDocumentSize()
+        if abs(documentContainer.frame.height - previousHeight) > 0.5 {
+            invalidateIntrinsicContentSize()
+        }
+    }
+
     func syncDocumentSize() {
-        let width = contentSize.width > 1 ? contentSize.width : (bounds.width > 1 ? bounds.width : 320)
+        guard !isSyncingDocument else {
+            return
+        }
+        isSyncingDocument = true
+        defer { isSyncingDocument = false }
+
+        let width = scrollView.contentSize.width > 1 ? scrollView.contentSize.width : contentWidth
         if abs(documentContainer.frame.width - width) > 0.5 {
             documentContainer.frame.size.width = width
         }
         let fitted = ceil(hostingView.fittingSize.height)
-        let targetDocHeight = max(fitted, contentSize.height)
+        let targetDocHeight = max(fitted, scrollView.contentSize.height)
         if abs(documentContainer.frame.height - targetDocHeight) > 0.5 {
             documentContainer.frame.size.height = targetDocHeight
+        }
+        syncScrollbar(userScrolled: false)
+    }
+
+    func clampScrollOffsetIfNeeded() {
+        let visibleHeight = scrollView.contentView.bounds.height
+        let docHeight = ceil(hostingView.fittingSize.height)
+        let maxOffset = max(0, docHeight - visibleHeight)
+        if scrollView.contentView.bounds.origin.y > maxOffset {
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: maxOffset))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+        syncScrollbar(userScrolled: false)
+    }
+
+    private func scrollToOffset(_ offset: CGFloat) {
+        let visibleHeight = scrollView.contentView.bounds.height
+        let docHeight = ceil(hostingView.fittingSize.height)
+        let maxOffset = max(0, docHeight - visibleHeight)
+        let clamped = min(max(offset, 0), maxOffset)
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: clamped))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        syncScrollbar(userScrolled: true)
+    }
+
+    private func handleClipBoundsChanged() {
+        let currentOffset = scrollView.contentView.bounds.origin.y
+        let moved = abs(currentOffset - lastObservedOffset) > 0.25
+        lastObservedOffset = currentOffset
+        syncScrollbar(userScrolled: moved)
+    }
+
+    private func syncScrollbar(userScrolled: Bool) {
+        let visibleHeight = scrollView.contentView.bounds.height
+        let docHeight = ceil(hostingView.fittingSize.height)
+        let offset = scrollView.contentView.bounds.origin.y
+        scrollbarView.updateMetrics(
+            viewportHeight: visibleHeight,
+            contentHeight: docHeight,
+            scrollOffset: offset
+        )
+        if userScrolled {
+            scrollbarView.noteScrollActivity()
         }
     }
 }
 
 private struct FittingGroupsScrollView<Content: View>: NSViewRepresentable {
+    let contentWidth: CGFloat
+    let gutterWidth: CGFloat
     let maxHeight: CGFloat
+    let thumbColor: NSColor
     @ViewBuilder let content: () -> Content
 
     func makeNSView(context: Context) -> BoundedGroupsScrollView<Content> {
-        BoundedGroupsScrollView(rootView: content(), maxHeight: maxHeight)
+        BoundedGroupsScrollView(
+            rootView: content(),
+            contentWidth: contentWidth,
+            gutterWidth: gutterWidth,
+            maxHeight: maxHeight,
+            thumbColor: thumbColor
+        )
     }
 
     func updateNSView(_ nsView: BoundedGroupsScrollView<Content>, context: Context) {
         nsView.maxHeight = maxHeight
+        nsView.updateThumbColor(thumbColor)
         nsView.hostingView.rootView = content()
         nsView.syncDocumentSize()
         nsView.invalidateIntrinsicContentSize()
         nsView.needsLayout = true
-        let visibleHeight = nsView.contentView.bounds.height
-        let docHeight = ceil(nsView.hostingView.fittingSize.height)
-        let maxOffset = max(0, docHeight - visibleHeight)
-        if nsView.contentView.bounds.origin.y > maxOffset {
-            nsView.contentView.scroll(to: NSPoint(x: 0, y: maxOffset))
-            nsView.reflectScrolledClipView(nsView.contentView)
-        }
+        nsView.clampScrollOffsetIfNeeded()
     }
 
     @available(macOS 13.0, *)
@@ -1023,7 +1518,7 @@ private struct FittingGroupsScrollView<Content: View>: NSViewRepresentable {
         nsView: BoundedGroupsScrollView<Content>,
         context: Context
     ) -> CGSize? {
-        let width = proposal.width ?? 320
+        let width = proposal.width ?? nsView.totalWidth
         return CGSize(width: width, height: min(nsView.measuredContentHeight, maxHeight))
     }
 }

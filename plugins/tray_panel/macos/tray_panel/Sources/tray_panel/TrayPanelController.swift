@@ -74,7 +74,7 @@ private final class TrayPanelBorderView: NSView {
     }
 }
 
-private extension TrayPanelTheme {
+extension TrayPanelTheme {
     func nsColor(_ argb: Int64) -> NSColor {
         let value = UInt32(truncatingIfNeeded: argb)
         let alpha = CGFloat((value >> 24) & 0xFF) / 255.0
