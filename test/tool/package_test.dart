@@ -94,8 +94,16 @@ void main() {
     });
   });
 
+  test('hands the build its tag only when it has one', () {
+    expect(package.buildDefines(env: 'pre', tag: 'v0.9.4-pre.2+1'), {
+      'APP_ENV': 'pre',
+      'RELEASE_TAG': 'v0.9.4-pre.2+1',
+    });
+    expect(package.buildDefines(env: 'pre'), {'APP_ENV': 'pre'});
+  });
+
   test(
-    'planBuild writes APP_ENV and raw APP_BUILD_NUMBER to env.json',
+    'planBuild writes APP_ENV, RELEASE_TAG and raw APP_BUILD_NUMBER to env.json',
     () async {
       final temp = Directory.systemTemp.createTempSync('package_env_test');
       addTearDown(() => temp.deleteSync(recursive: true));
@@ -104,16 +112,17 @@ void main() {
         os: ReleaseOs.android,
         arch: ReleaseArch.universal,
         line: ReleaseLine.dev,
-        version: '0.9.4+2026112301',
+        version: '0.9.5.2026112601',
         channel: 'stable',
         commit: '394f5bb82a524db3838aa441a8a348d038666ad7',
-        pubspecVersion: '0.9.4+2026112301',
+        pubspecVersion: '0.9.5+2026112601',
         description: 'A proxy client.',
         outputDirectory: p.join(temp.path, 'dist'),
       );
       final steps = package.planBuild(
         context,
         env: 'stable',
+        tag: 'v0.9.5+2026112601',
         androidArches: const [ReleaseArch.arm64],
         verbose: false,
       );
@@ -124,7 +133,8 @@ void main() {
           jsonDecode(File(p.join(temp.path, 'env.json')).readAsStringSync())
               as Map<String, dynamic>;
       expect(written['APP_ENV'], 'stable');
-      expect(written['APP_BUILD_NUMBER'], '2026112301');
+      expect(written['RELEASE_TAG'], 'v0.9.5+2026112601');
+      expect(written['APP_BUILD_NUMBER'], '2026112601');
     },
   );
 
@@ -220,25 +230,25 @@ hooks:
 
     expect(
       names(ReleaseOs.windows, ['exe', 'zip'], arch: ReleaseArch.arm64),
-      'FlClash-rs-0.9.4-pre.2-windows-arm64-setup.exe '
-      'FlClash-rs-0.9.4-pre.2-windows-arm64-portable.zip',
+      'FlClash-0.9.4-pre.2-windows-arm64-setup.exe '
+      'FlClash-0.9.4-pre.2-windows-arm64-portable.zip',
     );
     expect(
       names(ReleaseOs.linux, ['deb', 'rpm', 'appimage']),
-      'FlClash-rs-0.9.4-pre.2-linux-amd64.deb '
-      'FlClash-rs-0.9.4-pre.2-linux-amd64.rpm '
-      'FlClash-rs-0.9.4-pre.2-linux-amd64.AppImage',
+      'FlClash-0.9.4-pre.2-linux-amd64.deb '
+      'FlClash-0.9.4-pre.2-linux-amd64.rpm '
+      'FlClash-0.9.4-pre.2-linux-amd64.AppImage',
     );
     expect(
       names(ReleaseOs.macos, ['dmg'], arch: ReleaseArch.arm64),
-      'FlClash-rs-0.9.4-pre.2-macos-arm64.dmg',
+      'FlClash-0.9.4-pre.2-macos-arm64.dmg',
     );
     expect(
       names(ReleaseOs.android, ['apk']),
-      'FlClash-rs-0.9.4-pre.2-android-arm64.apk '
-      'FlClash-rs-0.9.4-pre.2-android-armv7.apk '
-      'FlClash-rs-0.9.4-pre.2-android-amd64.apk '
-      'FlClash-rs-0.9.4-pre.2-android-universal.apk',
+      'FlClash-0.9.4-pre.2-android-arm64.apk '
+      'FlClash-0.9.4-pre.2-android-armv7.apk '
+      'FlClash-0.9.4-pre.2-android-amd64.apk '
+      'FlClash-0.9.4-pre.2-android-universal.apk',
     );
     expect(() => names(ReleaseOs.macos, ['deb']), throwsA(isA<PackageError>()));
   });
@@ -413,7 +423,7 @@ hooks:
       );
       final checksums = writeManifest(dir, [entry]);
 
-      expect(checksums, 'FlClash-rs-0.9.4-SHA256SUMS');
+      expect(checksums, 'FlClash-0.9.4-SHA256SUMS');
       expect(
         File(p.join(dir, checksums)).readAsStringSync(),
         '${sha256.convert(utf8.encode(entry.name))}  ${entry.name}\n',
@@ -424,7 +434,7 @@ hooks:
       expect(json['checksums'], checksums);
       expect(json['artifacts'], [
         {
-          'name': 'FlClash-rs-0.9.4-linux-amd64.deb',
+          'name': 'FlClash-0.9.4-linux-amd64.deb',
           'sha256': entry.sha256,
           'size': entry.name.length,
           'line': 'rs',
@@ -452,20 +462,17 @@ hooks:
       final checksums = await mergeManifests([linux, macos], out);
 
       expect(readManifest(out).map((entry) => entry.name), [
-        'FlClash-rs-0.9.4-linux-amd64.deb',
-        'FlClash-rs-0.9.4-macos-arm64.dmg',
+        'FlClash-0.9.4-linux-amd64.deb',
+        'FlClash-0.9.4-macos-arm64.dmg',
       ]);
       expect(
         File(
           p.join(out, checksums),
         ).readAsLinesSync().map((l) => l.split('  ').last),
-        [
-          'FlClash-rs-0.9.4-linux-amd64.deb',
-          'FlClash-rs-0.9.4-macos-arm64.dmg',
-        ],
+        ['FlClash-0.9.4-linux-amd64.deb', 'FlClash-0.9.4-macos-arm64.dmg'],
       );
       expect(
-        File(p.join(out, 'FlClash-rs-0.9.4-macos-arm64.dmg')).existsSync(),
+        File(p.join(out, 'FlClash-0.9.4-macos-arm64.dmg')).existsSync(),
         isTrue,
       );
     });

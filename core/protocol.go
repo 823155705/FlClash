@@ -47,6 +47,7 @@ const (
 	providerGetMethod      CoreMethod = "provider.get"
 	providerUpdateMethod   CoreMethod = "provider.update"
 	providerSideLoadMethod CoreMethod = "provider.sideLoad"
+	ruleListMethod         CoreMethod = "rule.list"
 	ruleSetDumpMethod      CoreMethod = "ruleSet.dump"
 	ruleSetCompileMethod   CoreMethod = "ruleSet.compile"
 	geoUpdateMethod        CoreMethod = "geo.update"
@@ -78,6 +79,7 @@ const (
 	mitmIssueCertificateMethod    CoreMethod = "mitm.issueCertificate"
 	mitmRunScriptMethod           CoreMethod = "mitm.runScript"
 	mitmExchangesMethod           CoreMethod = "mitm.exchanges"
+	mitmQueryMethod               CoreMethod = "mitm.query"
 	mitmExchangeMethod            CoreMethod = "mitm.exchange"
 	mitmBodyMethod                CoreMethod = "mitm.body"
 
@@ -88,13 +90,12 @@ const (
 type MessageType string
 
 const (
-	LogMessage              MessageType = "log"
-	DelayMessage            MessageType = "delay"
-	RequestMessage          MessageType = "request"
-	ConnectionClosedMessage MessageType = "connectionClosed"
-	DnsMessage              MessageType = "dns"
-	LoadedMessage           MessageType = "loaded"
-	GeoUpdateMessage        MessageType = "geoUpdate"
+	LogMessage       MessageType = "log"
+	DelayMessage     MessageType = "delay"
+	RequestMessage   MessageType = "request"
+	DnsMessage       MessageType = "dns"
+	LoadedMessage    MessageType = "loaded"
+	GeoUpdateMessage MessageType = "geoUpdate"
 	// Named after the Dart enum value, which is how CoreEvent.fromJson decodes it.
 	RouteChangedMessage   MessageType = "routeChanged"
 	DialerLoopMessage     MessageType = "dialerLoop"

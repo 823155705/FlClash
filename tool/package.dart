@@ -11,6 +11,7 @@ import 'src/package/context.dart';
 import 'src/package/linux.dart';
 import 'src/package/macos.dart';
 import 'src/package/manifest.dart';
+import 'src/package/release_contract.dart';
 import 'src/package/steps.dart';
 import 'src/package/tools.dart';
 import 'src/package/version.dart';
@@ -64,6 +65,7 @@ void _usage(ArgParser parser) {
   stderr
     ..writeln('Usage: dart tool/package.dart [platform] [options]')
     ..writeln('       dart tool/package.dart merge <dir>... [--out dist]')
+    ..writeln('       dart tool/package.dart check <dir>')
     ..writeln()
     ..writeln('Platform: the host platform (default) or android.')
     ..writeln(parser.usage);
@@ -150,24 +152,43 @@ List<String> flutterBuildArguments(
   ];
 }
 
-List<Step> planBuild(
-  PackageContext context, {
+/// The app compares a prerelease by its tag, since its version name is only
+/// `X.Y.Z`; see installedReleaseVersion in lib/common/app_update.dart.
+Map<String, String> buildDefines({
   required String env,
-  required List<ReleaseArch> androidArches,
-  required bool verbose,
+  String? tag,
+  String? buildNumber,
+  Map<String, String> environment = const {},
 }) {
-  final environment = <String, String>{
+  return {
     'APP_ENV': env,
-    'APP_BUILD_NUMBER': context.buildNumber,
-    if (Platform.environment['APP_TRAFFIC_CUSTOM_BUILD'] == 'true')
+    'RELEASE_TAG': ?tag,
+    if (buildNumber != null && buildNumber.isNotEmpty)
+      'APP_BUILD_NUMBER': buildNumber,
+    if (environment['APP_TRAFFIC_CUSTOM_BUILD'] == 'true')
       'APP_TRAFFIC_CUSTOM_BUILD': 'true',
-    if (Platform.environment['APP_UPDATE_REPOSITORY'] case final String repo
+    if (environment['APP_UPDATE_REPOSITORY'] case final String repo
         when repo.isNotEmpty)
       'APP_UPDATE_REPOSITORY': repo,
   };
+}
+
+List<Step> planBuild(
+  PackageContext context, {
+  required String env,
+  String? tag,
+  required List<ReleaseArch> androidArches,
+  required bool verbose,
+}) {
+  final defines = buildDefines(
+    env: env,
+    tag: tag,
+    buildNumber: context.buildNumber,
+    environment: Platform.environment,
+  );
   final steps = <Step>[
-    Task('write env.json with APP_ENV=$env', () async {
-      File(context.path('env.json')).writeAsStringSync(jsonEncode(environment));
+    Task('write env.json with ${jsonEncode(defines)}', () async {
+      File(context.path('env.json')).writeAsStringSync(jsonEncode(defines));
     }),
     Task('install the packaging tools ${context.os.name} is missing', () {
       return ensurePackagingTools(context.os, context.arch);
@@ -290,13 +311,14 @@ Future<int> _package(ArgResults results) async {
     ...planBuild(
       context,
       env: env,
+      tag: resolved.tag,
       androidArches: androidArches,
       verbose: verbose,
     ),
     for (final plan in plans) ...plan.steps,
   ];
   final artifacts = [for (final plan in plans) ...plan.artifacts];
-  final checksums = releaseChecksumsName(context.line, context.version);
+  final checksums = releaseChecksumsName(context.version);
 
   if (dryRun) {
     stdout
@@ -350,11 +372,35 @@ Future<int> _merge(List<String> arguments) async {
   return 0;
 }
 
+int _check(List<String> arguments) {
+  if (arguments.length != 1) {
+    throw const PackageError('check takes one merged directory');
+  }
+  final failures = releaseContractFailures(
+    Directory.current.path,
+    arguments.single,
+  );
+  for (final failure in failures) {
+    stderr.writeln(failure);
+  }
+  if (failures.isNotEmpty) {
+    throw PackageError(
+      '${arguments.single} lacks ${failures.length} file(s) the site, '
+      'release notes, Homebrew cask or in-app updater look up by name',
+    );
+  }
+  stdout.writeln('${arguments.single} serves every name it is looked up by');
+  return 0;
+}
+
 Future<void> main(List<String> arguments) async {
   final parser = createPackageArgParser();
   try {
     if (arguments.firstOrNull == 'merge') {
       exit(await _merge(arguments.skip(1).toList()));
+    }
+    if (arguments.firstOrNull == 'check') {
+      exit(_check(arguments.skip(1).toList()));
     }
     final results = parser.parse(arguments);
     if (results['help'] as bool) {

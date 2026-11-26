@@ -53,7 +53,7 @@ jobs:
           fi
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.50.0'
+          flutter-version: '3.50.1'
           cache: true
       - uses: actions/setup-go@v5
         with:
@@ -111,6 +111,9 @@ jobs:
         run: |
           sudo xcode-select -s /Applications/Xcode_26.3.app || sudo xcode-select -s /Applications/Xcode_26.2.app
           xcodebuild -version
+      - name: Disable Impeller on Intel macOS
+        if: matrix.name == 'macos-amd64'
+        run: plutil -replace FLTEnableImpeller -bool NO macos/Runner/Info.plist
       - name: Fetch CA certificates
         shell: bash
         env:
@@ -129,7 +132,7 @@ jobs:
         run: |
           export PATH="$PATH:$HOME/.pub-cache/bin"
           flutter pub get
-          dart tool/package.dart "$PLATFORM" --env stable
+          dart tool/package.dart "$PLATFORM" --env stable --tag "$GITHUB_REF_NAME"
           if [[ "$PLATFORM" == macos ]]; then
             hdiutil verify dist/*.dmg
           fi

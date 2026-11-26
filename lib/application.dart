@@ -155,7 +155,7 @@ class ApplicationState extends ConsumerState<Application> {
         );
         final themeProps = ref.watch(themeSettingProvider);
         final textScale = themeProps.textScale;
-        return PrismApp(
+        final prismApp = PrismApp(
           debugShowCheckedModeBanner: false,
           navigatorKey: globalState.navigatorKey,
           onNavigationNotification: (_) => true,
@@ -196,6 +196,13 @@ class ApplicationState extends ConsumerState<Application> {
             builder: (_) => KeyboardInsetHold(child: child!),
           ),
         );
+        final desktopWindow = window;
+        return desktopWindow == null
+            ? prismApp
+            : HiddenWindowFocusGuard(
+                shown: desktopWindow.shown,
+                child: prismApp,
+              );
       },
       child: const HomePage(),
     );

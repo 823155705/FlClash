@@ -120,6 +120,9 @@ class _CoreContainerState extends ConsumerState<CoreManager>
       if (next == CoreStatus.connected && prev != CoreStatus.connected) {
         _syncLogStream();
       }
+      if (prev == CoreStatus.connected && next != CoreStatus.connected) {
+        ref.read(requestsProvider.notifier).closeAll();
+      }
       _syncTrafficTimer();
     }, fireImmediately: true);
   }
@@ -221,12 +224,6 @@ class _CoreContainerState extends ConsumerState<CoreManager>
   }
 
   @override
-  void onConnectionClosed(TrackerInfo trackerInfo) {
-    _trafficTracker.observeClosed(trackerInfo);
-    _resumeTrafficTimerIfNeeded();
-  }
-
-  @override
   Future<void> onDelay(Delay delay) async {
     super.onDelay(delay);
     final proxiesAction = ref.read(proxiesActionProvider.notifier);
@@ -279,6 +276,13 @@ class _CoreContainerState extends ConsumerState<CoreManager>
     _resumeTrafficTimerIfNeeded();
     ref.read(requestsProvider.notifier).updateTraffic(traffic);
     super.onRequestTraffic(traffic);
+  }
+
+  @override
+  void onRequestsClosed(Set<String> ids) {
+    _trafficTracker.observeClosedIds(ids);
+    ref.read(requestsProvider.notifier).close(ids);
+    super.onRequestsClosed(ids);
   }
 
   @override

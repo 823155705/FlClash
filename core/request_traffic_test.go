@@ -61,7 +61,7 @@ func TestRequestTrafficReportsChangesUntilTheRequestCloses(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	changed, _ := collectDelivered(&watch, isOpen)
-	if len(changed) != 1 || changed[0].Id != tracker.ID() || changed[0].Upload != 5 {
+	if len(changed) != 1 || changed[0].Id != tracker.ID() || changed[0].Upload != 5 || changed[0].Closed {
 		t.Fatalf("after a write: %v", changed)
 	}
 	if changed, _ := collectDelivered(&watch, isOpen); len(changed) != 0 {
@@ -73,11 +73,30 @@ func TestRequestTrafficReportsChangesUntilTheRequestCloses(t *testing.T) {
 	}
 	open = false
 	changed, watching := collectDelivered(&watch, isOpen)
-	if len(changed) != 1 || changed[0].Upload != 8 || watching {
+	if len(changed) != 1 || changed[0].Upload != 8 || !changed[0].Closed || watching {
 		t.Fatalf("closed request: changed %v, watching %v", changed, watching)
 	}
 	if !watch.add(tracker) {
 		t.Fatal("a request after the watch stopped did not restart it")
+	}
+}
+
+func TestRequestTrafficReportsTheCloseOfAnIdleRequest(t *testing.T) {
+	tracker := newPipeTracker(t)
+	watch := requestTrafficWatch{requests: map[string]*watchedRequest{}}
+	open := true
+	isOpen := func(string) bool { return open }
+
+	watch.add(tracker)
+	if _, err := tracker.Write([]byte("hello")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	collectDelivered(&watch, isOpen)
+	open = false
+	changed, watching := collectDelivered(&watch, isOpen)
+	want := RequestTraffic{Id: tracker.ID(), Upload: 5, Closed: true}
+	if len(changed) != 1 || changed[0] != want || watching {
+		t.Fatalf("closed idle request: changed %v, watching %v", changed, watching)
 	}
 }
 
@@ -112,7 +131,7 @@ func TestRequestTrafficResendsTheLastTotalsOfAClosedRequestUntilQueued(t *testin
 		t.Fatal("a closed request whose last totals were dropped was let go")
 	}
 	changed, watching := collectDelivered(&watch, isOpen)
-	if len(changed) != 1 || changed[0].Upload != 3 || watching {
+	if len(changed) != 1 || changed[0].Upload != 3 || !changed[0].Closed || watching {
 		t.Fatalf("after the dropped report: changed %v, watching %v", changed, watching)
 	}
 }
@@ -135,34 +154,5 @@ func TestRequestTrafficGivesUpOnAClosedRequestItCannotReport(t *testing.T) {
 	}
 	if watch.collect(closed, dropped) {
 		t.Fatal("a closed request outlived its retries")
-	}
-}
-
-func TestAppTrafficCloseReportsFinalBytesAndRetries(t *testing.T) {
-	tracker := newPipeTracker(t)
-	var totals []int64
-	accepted := false
-	watch := requestTrafficWatch{
-		requests: map[string]*watchedRequest{},
-		closed: func(tracker statistic.Tracker) bool {
-			totals = append(totals, tracker.Info().UploadTotal.Load())
-			return accepted
-		},
-	}
-	watch.add(tracker)
-	closed := func(string) bool { return false }
-	collectDelivered(&watch, closed)
-	if _, err := tracker.Write([]byte("short request")); err != nil {
-		t.Fatal(err)
-	}
-	if _, watching := collectDelivered(&watch, closed); !watching {
-		t.Fatal("closed request lost before final traffic was accepted")
-	}
-	accepted = true
-	if _, watching := collectDelivered(&watch, closed); watching {
-		t.Fatal("closed request retained after final traffic was accepted")
-	}
-	if len(totals) != 2 || totals[0] != 13 || totals[1] != 13 {
-		t.Fatalf("final totals: %v", totals)
 	}
 }

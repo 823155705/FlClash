@@ -85,17 +85,11 @@ class AppTrafficTracker {
     }
   }
 
-  void observeClosed(TrackerInfo connection) {
-    if (!_countsTraffic(connection) ||
-        _closedConnectionIds.contains(connection.id)) {
-      return;
+  void observeClosedIds(Iterable<String> ids) {
+    for (final id in ids) {
+      _connections.remove(id);
+      _markClosed(id);
     }
-    final tracked =
-        _connections.remove(connection.id) ??
-        _TrackedConnection(connection, resolveProfile());
-    tracked.connection = connection;
-    _record(tracked, connection.upload, connection.download, DateTime.now());
-    _markClosed(connection.id);
   }
 
   void _markClosed(String id) {
