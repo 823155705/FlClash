@@ -15,6 +15,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "tray_panel_model.h"
@@ -125,6 +126,16 @@ class TrayPanelWindow {
     size_t group_index = 0;
     std::vector<size_t> proxy_indices;
     bool expanded = false;
+    bool force_expanded = false;
+  };
+
+  struct GroupUnfoldSpring {
+    double target = 0.0;
+    double start_sec = 0.0;
+    double c1 = 0.0;
+    double c2 = 0.0;
+    double value = 0.0;
+    double velocity = 0.0;
   };
 
   struct ProxyTileLayout {
@@ -137,8 +148,11 @@ class TrayPanelWindow {
   struct GroupCardLayout {
     size_t group_index = 0;
     bool expanded = false;
+    bool animating = false;
+    float unfold_progress = 0.0f;
     D2D1_RECT_F card_rect{};
     D2D1_RECT_F header_rect{};
+    D2D1_RECT_F body_clip_rect{};
     D2D1_RECT_F test_rect{};
     D2D1_RECT_F chevron_rect{};
     uint64_t header_key = 0;
@@ -210,6 +224,13 @@ class TrayPanelWindow {
   void ClampScroll();
   void ApplyLocalLayoutChange(bool sync_timers);
   void StartHeightAnimationIfNeeded(float prev_height_dip);
+  void StartGroupUnfold(const std::string& group_name, bool expand);
+  void GroupUnfoldState(const std::string& group_name,
+                        bool expanded,
+                        bool force_expanded,
+                        float* out_progress,
+                        bool* out_animating) const;
+  bool HasActiveGroupUnfolds() const;
   void SnapAnimationsToCurrentState();
   void CancelAnimations();
   void StepAnimationsAt(ULONGLONG now);
@@ -283,6 +304,7 @@ class TrayPanelWindow {
   TrayPanelState state_;
   TrayPanelTraffic traffic_;
   std::set<std::string> expanded_groups_;
+  std::unordered_map<std::string, GroupUnfoldSpring> group_unfolds_;
   bool search_visible_ = false;
   std::wstring search_query_;
   std::vector<FilteredGroup> filtered_groups_;
@@ -327,6 +349,7 @@ class TrayPanelWindow {
   ComPtr<IDWriteFactory> dwrite_factory_;
   ComPtr<ID2D1HwndRenderTarget> render_target_;
   ComPtr<ID2D1SolidColorBrush> brush_;
+  ComPtr<ID2D1Layer> clip_layer_;
   ComPtr<IDWriteInlineObject> ellipsis_trimming_;
 
   ComPtr<IDWriteTextFormat> fmt_title_;

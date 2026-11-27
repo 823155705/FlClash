@@ -422,16 +422,24 @@ struct TrayPanelView: View {
                 ) {
                     VStack(spacing: 8) {
                         ForEach(filteredGroups, id: \.group.id) { entry in
+                            let unfold = store.unfoldState(
+                                for: entry.group.name,
+                                forceExpand: entry.forceExpand
+                            )
                             ProxyGroupCard(
                                 group: entry.group,
                                 proxies: entry.proxies,
                                 isExpanded: entry.forceExpand || store.expandedGroupNames.contains(entry.group.name),
+                                unfoldProgress: unfold.progress,
+                                isUnfoldAnimating: unfold.isAnimating,
+                                maxViewportHeight: maxGroupsScrollHeight,
                                 theme: theme,
                                 labels: labels,
                                 onToggleExpand: {
-                                    withAnimation(.easeInOut(duration: 0.18)) {
-                                        store.toggleGroup(entry.group.name)
+                                    guard !entry.forceExpand else {
+                                        return
                                     }
+                                    store.toggleGroup(entry.group.name)
                                 },
                                 onTestDelay: {
                                     onAction("testGroupDelay", ["groupName": entry.group.name])
@@ -693,10 +701,21 @@ private struct CompactPillToggle: View {
     }
 }
 
+private enum ProxyGroupLayout {
+    static let cardPadding: CGFloat = 10
+    static let cardCornerRadius: CGFloat = 14
+    static let tileHeight: CGFloat = 48
+    static let tileSpacing: CGFloat = 6
+    static let rowStride: CGFloat = tileHeight + tileSpacing
+}
+
 private struct ProxyGroupCard: View {
     let group: TrayPanelGroup
     let proxies: [TrayPanelProxy]
     let isExpanded: Bool
+    let unfoldProgress: CGFloat
+    let isUnfoldAnimating: Bool
+    let maxViewportHeight: CGFloat
     let theme: TrayPanelTheme
     let labels: TrayPanelLabels
     let onToggleExpand: () -> Void
@@ -705,115 +724,213 @@ private struct ProxyGroupCard: View {
 
     @State private var isHeaderHovered = false
 
+    private var clampedProgress: CGFloat {
+        min(max(unfoldProgress, 0), 1)
+    }
+
+    private var isSettledExpanded: Bool {
+        !isUnfoldAnimating && clampedProgress >= 1
+    }
+
+    private var totalRowCount: Int {
+        (proxies.count + 1) / 2
+    }
+
+    private var unfoldingRowCount: Int {
+        guard totalRowCount > 0 else {
+            return 0
+        }
+        let visibleRows = max(1, Int(floor(maxViewportHeight / ProxyGroupLayout.rowStride)) + 1)
+        return min(totalRowCount, visibleRows)
+    }
+
+    private var fullBodyHeight: CGFloat {
+        guard totalRowCount > 0 else {
+            return 0
+        }
+        return CGFloat(totalRowCount) * ProxyGroupLayout.tileHeight
+            + CGFloat(max(0, totalRowCount - 1)) * ProxyGroupLayout.tileSpacing
+            + ProxyGroupLayout.cardPadding
+    }
+
+    private var unfoldingBodyHeight: CGFloat {
+        guard unfoldingRowCount > 0 else {
+            return 0
+        }
+        return CGFloat(unfoldingRowCount) * ProxyGroupLayout.tileHeight
+            + CGFloat(max(0, unfoldingRowCount - 1)) * ProxyGroupLayout.tileSpacing
+            + ProxyGroupLayout.cardPadding
+    }
+
+    private var shownBodyHeight: CGFloat {
+        guard !proxies.isEmpty else {
+            return 0
+        }
+        if isSettledExpanded {
+            return fullBodyHeight
+        }
+        return unfoldingBodyHeight * clampedProgress
+    }
+
+    private var cardBackground: Color {
+        isHeaderHovered && !isExpanded && clampedProgress == 0
+            ? theme.color(theme.blockBg)
+            : theme.color(theme.cardBg)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 5) {
-                        Text(group.name)
-                            .font(.system(size: 12.5, weight: .semibold))
-                            .foregroundColor(theme.color(theme.onSurface))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+        let cardShape = RoundedRectangle(
+            cornerRadius: ProxyGroupLayout.cardCornerRadius,
+            style: .continuous
+        )
+        VStack(alignment: .leading, spacing: 0) {
+            headerRow
+                .padding(ProxyGroupLayout.cardPadding)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onToggleExpand)
+                .onHover { hovering in
+                    isHeaderHovered = hovering
+                }
+                .zIndex(1)
 
-                        if !group.type.isEmpty {
-                            Text(group.type)
-                                .font(.system(size: 9.5, weight: .medium))
-                                .foregroundColor(theme.color(theme.onSurfaceVariant))
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1.5)
-                                .background(
-                                    Capsule(style: .continuous)
-                                        .fill(theme.color(theme.insetBg))
-                                )
-                        }
-                    }
+            if !proxies.isEmpty && (isSettledExpanded || shownBodyHeight > 0.01) {
+                unfoldingBody
+            }
+        }
+        .background(cardShape.fill(cardBackground))
+        .clipShape(cardShape)
+    }
 
-                    Text(group.selectedProxyName.isEmpty ? "-" : group.selectedProxyName)
-                        .font(.system(size: 11))
-                        .foregroundColor(theme.color(theme.onSurfaceVariant))
+    private var headerRow: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(group.name)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundColor(theme.color(theme.onSurface))
                         .lineLimit(1)
                         .truncationMode(.tail)
+
+                    if !group.type.isEmpty {
+                        Text(group.type)
+                            .font(.system(size: 9.5, weight: .medium))
+                            .foregroundColor(theme.color(theme.onSurfaceVariant))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(theme.color(theme.insetBg))
+                            )
+                    }
                 }
 
-                Spacer(minLength: 4)
-
-                DelayBadge(
-                    delay: group.selectedDelay,
-                    testing: group.testing,
-                    theme: theme,
-                    timeoutLabel: labels.timeout,
-                    failedLabel: labels.delayFailed
-                )
-
-                Button {
-                    if !group.testing {
-                        onTestDelay()
-                    }
-                } label: {
-                    Group {
-                        if group.testing {
-                            ProgressView()
-                                .controlSize(.small)
-                                .scaleEffect(0.62)
-                        } else {
-                            Image(systemName: "bolt.fill")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(theme.color(theme.onSurfaceVariant))
-                        }
-                    }
-                    .frame(width: 22, height: 22)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(theme.color(theme.blockBg))
-                    )
-                }
-                .buttonStyle(.plain)
-                .help(labels.delayTest)
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
+                Text(group.selectedProxyName.isEmpty ? "-" : group.selectedProxyName)
+                    .font(.system(size: 11))
                     .foregroundColor(theme.color(theme.onSurfaceVariant))
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .animation(.easeInOut(duration: 0.18), value: isExpanded)
-                    .frame(width: 14)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onToggleExpand)
-            .onHover { hovering in
-                isHeaderHovered = hovering
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
 
-            if isExpanded {
-                let columns = [
-                    GridItem(.flexible(), spacing: 6),
-                    GridItem(.flexible(), spacing: 6),
-                ]
-                LazyVGrid(columns: columns, spacing: 6) {
-                    ForEach(proxies) { proxy in
+            Spacer(minLength: 4)
+
+            DelayBadge(
+                delay: group.selectedDelay,
+                testing: group.testing,
+                theme: theme,
+                timeoutLabel: labels.timeout,
+                failedLabel: labels.delayFailed
+            )
+
+            Button {
+                if !group.testing {
+                    onTestDelay()
+                }
+            } label: {
+                Group {
+                    if group.testing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.62)
+                    } else {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(theme.color(theme.onSurfaceVariant))
+                    }
+                }
+                .frame(width: 22, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(theme.color(theme.blockBg))
+                )
+            }
+            .buttonStyle(.plain)
+            .help(labels.delayTest)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(theme.color(theme.onSurfaceVariant))
+                .rotationEffect(.degrees(90 * clampedProgress))
+                .frame(width: 14)
+        }
+    }
+
+    @ViewBuilder
+    private var unfoldingBody: some View {
+        let includeAllRows = isSettledExpanded || unfoldingRowCount == totalRowCount
+        let renderedCount = includeAllRows ? proxies.count : min(proxies.count, unfoldingRowCount * 2)
+        let rowCount = (renderedCount + 1) / 2
+        let block = VStack(spacing: ProxyGroupLayout.tileSpacing) {
+            ForEach(0..<rowCount, id: \.self) { row in
+                let firstIndex = row * 2
+                let secondIndex = firstIndex + 1
+                HStack(spacing: ProxyGroupLayout.tileSpacing) {
+                    let first = proxies[firstIndex]
+                    ProxyNodeTile(
+                        proxy: first,
+                        theme: theme,
+                        timeoutLabel: labels.timeout,
+                        failedLabel: labels.delayFailed
+                    ) {
+                        onSelectProxy(first.name)
+                    }
+                    .id(first.id)
+
+                    if secondIndex < renderedCount {
+                        let second = proxies[secondIndex]
                         ProxyNodeTile(
-                            proxy: proxy,
+                            proxy: second,
                             theme: theme,
                             timeoutLabel: labels.timeout,
                             failedLabel: labels.delayFailed
                         ) {
-                            onSelectProxy(proxy.name)
+                            onSelectProxy(second.name)
                         }
+                        .id(second.id)
+                    } else {
+                        Color.clear
+                            .frame(maxWidth: .infinity)
+                            .frame(height: ProxyGroupLayout.tileHeight)
                     }
                 }
             }
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(
-                    isHeaderHovered && !isExpanded
-                        ? theme.color(theme.blockBg)
-                        : theme.color(theme.cardBg)
-                )
-        )
+        .padding(.horizontal, ProxyGroupLayout.cardPadding)
+        .padding(.bottom, ProxyGroupLayout.cardPadding)
+
+        if isSettledExpanded {
+            block
+        } else {
+            Color.clear
+                .frame(height: shownBodyHeight)
+                .overlay(alignment: .bottom) {
+                    block
+                        .frame(height: unfoldingBodyHeight, alignment: .top)
+                }
+                .clipped()
+                .allowsHitTesting(false)
+        }
     }
 }
 
@@ -828,7 +945,7 @@ private struct ProxyNodeTile: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
                     Text(proxy.name)
                         .font(.system(size: 11.5, weight: proxy.selected ? .semibold : .medium))
@@ -866,7 +983,8 @@ private struct ProxyNodeTile: View {
                     )
                 }
             }
-            .padding(8)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, minHeight: ProxyGroupLayout.tileHeight, maxHeight: ProxyGroupLayout.tileHeight, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(
@@ -1506,6 +1624,7 @@ private struct FittingGroupsScrollView<Content: View>: NSViewRepresentable {
         nsView.maxHeight = maxHeight
         nsView.updateThumbColor(thumbColor)
         nsView.hostingView.rootView = content()
+        nsView.hostingView.layoutSubtreeIfNeeded()
         nsView.syncDocumentSize()
         nsView.invalidateIntrinsicContentSize()
         nsView.needsLayout = true

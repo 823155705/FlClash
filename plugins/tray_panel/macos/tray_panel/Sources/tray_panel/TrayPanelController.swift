@@ -109,6 +109,7 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
     private var spaceObserver: NSObjectProtocol?
     private var screenObserver: NSObjectProtocol?
     private var resizeScheduled = false
+    private var suppressNextResizeAnimation = false
     private var measuredContentHeight: CGFloat = TrayPanelController.minHeightFloor
     private var targetPanelFrame: NSRect?
     private var lastUnexpectedStatusCloseUptime: TimeInterval = 0
@@ -124,6 +125,21 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
         self.onVisibilityChanged = onVisibilityChanged
         self.onAction = onAction
         super.init()
+        store.onUnfoldAnimationSettled = { [weak self] in
+            guard let self = self, self.isVisible else {
+                return
+            }
+            self.suppressNextResizeAnimation = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else {
+                    return
+                }
+                self.suppressNextResizeAnimation = false
+                if self.isVisible && !self.store.isAnyGroupUnfolding {
+                    self.repositionPanel(animated: false, invalidateShadow: true)
+                }
+            }
+        }
     }
 
     deinit {
@@ -177,7 +193,10 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
         store.updateState(from: dict)
         applyAppearance()
         if isVisible {
-            repositionPanel(animated: true)
+            repositionPanel(
+                animated: !store.isAnyGroupUnfolding,
+                invalidateShadow: !store.isAnyGroupUnfolding
+            )
         }
     }
 
@@ -222,6 +241,8 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
     func close() {
         let wasVisible = isVisible
         removeObservers()
+        suppressNextResizeAnimation = false
+        store.snapUnfoldAnimations()
         targetPanelFrame = nil
         panel?.orderOut(nil)
         resolveStatusButton()?.highlight(false)
@@ -246,6 +267,7 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
 
     func dispose() {
         close()
+        store.attachDisplayWindow(nil)
         panel?.delegate = nil
         panel?.contentView = nil
         panel = nil
@@ -380,6 +402,7 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
         self.tintView = tint
         self.borderView = border
         self.hostingView = host
+        store.attachDisplayWindow(createdPanel)
     }
 
     private static func makeContinuousMaskImage(cornerRadius: CGFloat) -> NSImage {
@@ -420,6 +443,15 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
             return
         }
         measuredContentHeight = height
+        if store.isAnyGroupUnfolding || suppressNextResizeAnimation {
+            if store.isAnyGroupUnfolding {
+                suppressNextResizeAnimation = true
+            }
+            if isVisible {
+                repositionPanel(animated: false, invalidateShadow: false, layoutHosting: false)
+            }
+            return
+        }
         scheduleResize()
     }
 
@@ -440,12 +472,17 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
             }
             self.resizeScheduled = false
             if self.isVisible {
-                self.repositionPanel(animated: true)
+                let unfolding = self.store.isAnyGroupUnfolding
+                self.repositionPanel(animated: !unfolding, invalidateShadow: !unfolding)
             }
         }
     }
 
-    private func repositionPanel(animated: Bool = false) {
+    private func repositionPanel(
+        animated: Bool = false,
+        invalidateShadow: Bool = true,
+        layoutHosting: Bool = true
+    ) {
         guard let panel = panel,
               let hostingView = hostingView,
               let button = resolveStatusButton(),
@@ -454,7 +491,9 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
         }
 
         updateMaxPanelHeight(for: button)
-        hostingView.layoutSubtreeIfNeeded()
+        if layoutHosting {
+            hostingView.layoutSubtreeIfNeeded()
+        }
         let panelHeight = min(store.maxPanelHeight, max(Self.minHeightFloor, measuredContentHeight))
 
         let screen = buttonWindow.screen ?? NSScreen.main
@@ -468,12 +507,13 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
         let y = max(visibleFrame.minY + 8, topY - panelHeight)
 
         let nextFrame = NSRect(x: round(x), y: round(y), width: Self.panelWidth, height: round(panelHeight))
-        if animated, let target = targetPanelFrame, framesMatch(target, nextFrame) {
+        let shouldAnimate = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if shouldAnimate, let target = targetPanelFrame, framesMatch(target, nextFrame) {
             return
         }
         if !framesMatch(panel.frame, nextFrame) {
             targetPanelFrame = nextFrame
-            if animated {
+            if shouldAnimate {
                 NSAnimationContext.runAnimationGroup({ context in
                     context.duration = 0.18
                     context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -490,8 +530,12 @@ final class TrayPanelController: NSObject, NSWindowDelegate {
             } else {
                 targetPanelFrame = nil
                 panel.setFrame(nextFrame, display: true)
-                panel.invalidateShadow()
+                if invalidateShadow {
+                    panel.invalidateShadow()
+                }
             }
+        } else if invalidateShadow {
+            panel.invalidateShadow()
         }
     }
 

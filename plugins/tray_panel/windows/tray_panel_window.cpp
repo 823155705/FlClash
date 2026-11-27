@@ -48,11 +48,16 @@ constexpr UINT_PTR kAnimTimerId = 4;
 constexpr UINT kSpinnerIntervalMs = 33;
 constexpr UINT kCopyFeedbackDurationMs = 1500;
 constexpr UINT kCaretBlinkMs = 530;
-constexpr UINT kAnimIntervalMs = 15;
+constexpr UINT kAnimIntervalMs = 10;
 constexpr ULONGLONG kModeAnimDurationMs = 175;
 constexpr ULONGLONG kLayoutAnimDurationMs = 175;
 constexpr ULONGLONG kToggleGuardMs = 400;
 constexpr float kPi = 3.14159265f;
+constexpr double kUnfoldMass = 1.0;
+constexpr double kUnfoldStiffness = 631.65;
+constexpr double kUnfoldDamping = 50.27;
+constexpr double kUnfoldDistanceTolerance = 1e-3;
+constexpr double kUnfoldVelocityTolerance = 0.03;
 
 struct AccentPolicy {
   int accent_state;
@@ -176,6 +181,45 @@ float Clamp01(float t) {
   return (std::max)(0.0f, (std::min)(1.0f, t));
 }
 
+double MonotonicSeconds() {
+  static const double inv_freq = []() -> double {
+    LARGE_INTEGER freq{};
+    if (::QueryPerformanceFrequency(&freq) && freq.QuadPart > 0) {
+      return 1.0 / static_cast<double>(freq.QuadPart);
+    }
+    return 0.0;
+  }();
+  if (inv_freq > 0.0) {
+    LARGE_INTEGER counter{};
+    ::QueryPerformanceCounter(&counter);
+    return static_cast<double>(counter.QuadPart) * inv_freq;
+  }
+  return static_cast<double>(::GetTickCount64()) * 0.001;
+}
+
+bool ClientAreaAnimationsEnabled() {
+  BOOL enabled = TRUE;
+  if (::SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0)) {
+    return enabled != FALSE;
+  }
+  return true;
+}
+
+double UnfoldSpringRoot() {
+  static const double root =
+      std::sqrt(kUnfoldDamping * kUnfoldDamping -
+                4.0 * kUnfoldMass * kUnfoldStiffness);
+  return root;
+}
+
+double UnfoldSpringR1() {
+  return (-kUnfoldDamping + UnfoldSpringRoot()) / (2.0 * kUnfoldMass);
+}
+
+double UnfoldSpringR2() {
+  return (-kUnfoldDamping - UnfoldSpringRoot()) / (2.0 * kUnfoldMass);
+}
+
 float EaseOutCubic(float t) {
   const float u = 1.0f - Clamp01(t);
   return 1.0f - u * u * u;
@@ -290,10 +334,11 @@ bool TrayPanelWindow::SetState(const TrayPanelState& state) {
   const bool prev_groups_empty = state_.groups.empty();
   const ULONGLONG now = ::GetTickCount64();
 
+  const bool mode_changed = state.mode != prev_mode;
+  const bool groups_toggled = state.groups.empty() != prev_groups_empty;
+
   if (was_ready) {
     StepAnimationsAt(now);
-    const bool mode_changed = state.mode != prev_mode;
-    const bool groups_toggled = state.groups.empty() != prev_groups_empty;
     if ((mode_changed || groups_toggled) && !prev_groups_empty) {
       outgoing_proxies_.valid = true;
       outgoing_proxies_.search_visible = search_visible_;
@@ -322,6 +367,17 @@ bool TrayPanelWindow::SetState(const TrayPanelState& state) {
       ++it;
     }
   }
+  if (mode_changed || groups_toggled) {
+    group_unfolds_.clear();
+  } else {
+    for (auto it = group_unfolds_.begin(); it != group_unfolds_.end();) {
+      if (valid_groups.find(it->first) == valid_groups.end()) {
+        it = group_unfolds_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
 
   RebuildFilteredGroups();
   RebuildLayout();
@@ -348,7 +404,11 @@ bool TrayPanelWindow::SetState(const TrayPanelState& state) {
       pill_current_rect_ = target_pill;
     }
 
-    StartHeightAnimationIfNeeded(prev_height_dip);
+    if (!HasActiveGroupUnfolds() || mode_changed || groups_toggled) {
+      StartHeightAnimationIfNeeded(prev_height_dip);
+    } else if (height_anim_active_) {
+      anim_target_height_dip_ = layout_.panel_height_dip;
+    }
 
     if ((state_.mode != prev_mode ||
          state_.groups.empty() != prev_groups_empty) &&
@@ -601,16 +661,21 @@ bool TrayPanelWindow::EnsureRenderTarget() {
       render_target_.Reset();
       return false;
     }
+    render_target_->CreateLayer(clip_layer_.GetAddressOf());
   } else {
     const D2D1_SIZE_U current = render_target_->GetPixelSize();
     if (current.width != width || current.height != height) {
       render_target_->Resize(D2D1::SizeU(width, height));
+    }
+    if (!clip_layer_) {
+      render_target_->CreateLayer(clip_layer_.GetAddressOf());
     }
   }
   return true;
 }
 
 void TrayPanelWindow::DiscardRenderResources() {
+  clip_layer_.Reset();
   brush_.Reset();
   render_target_.Reset();
 }
@@ -906,6 +971,67 @@ void TrayPanelWindow::StartHeightAnimationIfNeeded(float prev_height_dip) {
   height_anim_active_ = true;
 }
 
+void TrayPanelWindow::StartGroupUnfold(const std::string& group_name,
+                                       bool expand) {
+  if (!is_visible_ || !ClientAreaAnimationsEnabled()) {
+    group_unfolds_.erase(group_name);
+    return;
+  }
+
+  const double now_sec = MonotonicSeconds();
+  const double target = expand ? 1.0 : 0.0;
+  double start_value = expand ? 0.0 : 1.0;
+  double start_velocity = 0.0;
+
+  const auto it = group_unfolds_.find(group_name);
+  if (it != group_unfolds_.end()) {
+    const GroupUnfoldSpring& prev = it->second;
+    const double elapsed = (std::max)(0.0, now_sec - prev.start_sec);
+    const double r1 = UnfoldSpringR1();
+    const double r2 = UnfoldSpringR2();
+    const double e1 = std::exp(r1 * elapsed);
+    const double e2 = std::exp(r2 * elapsed);
+    start_value = prev.target + prev.c1 * e1 + prev.c2 * e2;
+    start_velocity = prev.c1 * r1 * e1 + prev.c2 * r2 * e2;
+  }
+
+  const double r1 = UnfoldSpringR1();
+  const double r2 = UnfoldSpringR2();
+  const double y0 = start_value - target;
+  GroupUnfoldSpring spring;
+  spring.target = target;
+  spring.start_sec = now_sec;
+  spring.c2 = (start_velocity - r1 * y0) / (r2 - r1);
+  spring.c1 = y0 - spring.c2;
+  spring.value = start_value;
+  spring.velocity = start_velocity;
+  group_unfolds_[group_name] = spring;
+}
+
+void TrayPanelWindow::GroupUnfoldState(const std::string& group_name,
+                                       bool expanded,
+                                       bool force_expanded,
+                                       float* out_progress,
+                                       bool* out_animating) const {
+  if (force_expanded) {
+    *out_progress = 1.0f;
+    *out_animating = false;
+    return;
+  }
+  const auto it = group_unfolds_.find(group_name);
+  if (it != group_unfolds_.end()) {
+    *out_progress = Clamp01(static_cast<float>(it->second.value));
+    *out_animating = true;
+    return;
+  }
+  *out_progress = expanded ? 1.0f : 0.0f;
+  *out_animating = false;
+}
+
+bool TrayPanelWindow::HasActiveGroupUnfolds() const {
+  return !group_unfolds_.empty();
+}
+
 void TrayPanelWindow::SnapAnimationsToCurrentState() {
   mode_anim_active_ = false;
   last_mode_ = state_.mode;
@@ -922,6 +1048,8 @@ void TrayPanelWindow::SnapAnimationsToCurrentState() {
   proxies_anim_active_ = false;
   proxies_anim_progress_ = 1.0f;
   outgoing_proxies_.Reset();
+
+  group_unfolds_.clear();
 }
 
 void TrayPanelWindow::CancelAnimations() {
@@ -971,10 +1099,43 @@ void TrayPanelWindow::StepAnimationsAt(ULONGLONG now) {
                                static_cast<float>(kLayoutAnimDurationMs);
     }
   }
+
+  if (!group_unfolds_.empty()) {
+    const double now_sec = MonotonicSeconds();
+    const double r1 = UnfoldSpringR1();
+    const double r2 = UnfoldSpringR2();
+    bool unfold_changed = false;
+    for (auto it = group_unfolds_.begin(); it != group_unfolds_.end();) {
+      GroupUnfoldSpring& spring = it->second;
+      const double elapsed = (std::max)(0.0, now_sec - spring.start_sec);
+      const double e1 = std::exp(r1 * elapsed);
+      const double e2 = std::exp(r2 * elapsed);
+      const double displacement = spring.c1 * e1 + spring.c2 * e2;
+      const double next_velocity = spring.c1 * r1 * e1 + spring.c2 * r2 * e2;
+      unfold_changed = true;
+      if (elapsed >= 1.5 ||
+          (std::fabs(displacement) <= kUnfoldDistanceTolerance &&
+           std::fabs(next_velocity) <= kUnfoldVelocityTolerance)) {
+        it = group_unfolds_.erase(it);
+      } else {
+        spring.value = spring.target + displacement;
+        spring.velocity = next_velocity;
+        ++it;
+      }
+    }
+    if (unfold_changed) {
+      RebuildLayout();
+      ClampScroll();
+      if (height_anim_active_) {
+        anim_target_height_dip_ = layout_.panel_height_dip;
+      }
+    }
+  }
 }
 
 bool TrayPanelWindow::HasActiveAnimations() const {
-  return mode_anim_active_ || height_anim_active_ || proxies_anim_active_;
+  return mode_anim_active_ || height_anim_active_ || proxies_anim_active_ ||
+         !group_unfolds_.empty();
 }
 
 float TrayPanelWindow::CurrentPanelHeightDip() const {
@@ -1023,12 +1184,14 @@ void TrayPanelWindow::RebuildFilteredGroups() {
       FilteredGroup entry;
       entry.group_index = gi;
       entry.expanded = true;
+      entry.force_expanded = true;
       entry.proxy_indices = std::move(matched_proxies);
       filtered_groups_.push_back(std::move(entry));
     } else if (group.name_lower.find(query) != std::wstring::npos) {
       FilteredGroup entry;
       entry.group_index = gi;
       entry.expanded = expanded_groups_.count(group.name_utf8) > 0;
+      entry.force_expanded = false;
       entry.proxy_indices.reserve(group.proxies.size());
       for (size_t pi = 0; pi < group.proxies.size(); ++pi) {
         entry.proxy_indices.push_back(pi);
@@ -1171,17 +1334,23 @@ void TrayPanelWindow::RebuildLayout() {
       layout_.max_scroll_dip = 0.0f;
       y += kEmptyH + kSectionGapDip;
     } else {
+      const float avail_scroll = (std::max)(
+          44.0f, layout_.max_panel_height_dip - y - kFooterReservedDip);
       float content_y = y;
       for (size_t idx = 0; idx < filtered_groups_.size(); ++idx) {
         const auto& fg = filtered_groups_[idx];
+        const auto& group = state_.groups[fg.group_index];
         GroupCardLayout card;
         card.group_index = fg.group_index;
         card.expanded = fg.expanded;
+        GroupUnfoldState(group.name_utf8, fg.expanded, fg.force_expanded,
+                         &card.unfold_progress, &card.animating);
         const float card_top = content_y;
         constexpr float kCardPad = 10.0f;
         constexpr float kHeaderRowH = 34.0f;
         const float header_top = card_top + kCardPad;
         const float header_bottom = header_top + kHeaderRowH;
+        const float body_top = header_bottom + kCardPad;
 
         card.chevron_rect =
             D2D1::RectF(x1 - kCardPad - 14.0f, header_top, x1 - kCardPad,
@@ -1190,45 +1359,78 @@ void TrayPanelWindow::RebuildLayout() {
             D2D1::RectF(card.chevron_rect.left - 6.0f - 22.0f,
                         header_top + 6.0f, card.chevron_rect.left - 6.0f,
                         header_top + 28.0f);
-        card.header_rect = D2D1::RectF(x0, card_top, x1, header_bottom + 4.0f);
+        card.header_rect = D2D1::RectF(x0, card_top, x1, body_top);
         card.header_key =
             MakeHitKey(static_cast<int>(HitKind::kGroupHeader), fg.group_index);
         card.test_key = MakeHitKey(static_cast<int>(HitKind::kGroupTestDelay),
                                    fg.group_index);
 
-        float card_bottom = header_bottom + kCardPad;
-        if (fg.expanded && !fg.proxy_indices.empty()) {
-          const float tiles_top = header_bottom + 8.0f;
+        float card_bottom = body_top;
+        const bool settled_expanded =
+            !card.animating && card.unfold_progress >= 1.0f;
+        if (!fg.proxy_indices.empty() &&
+            (settled_expanded || card.unfold_progress > 0.001f)) {
           const float tile_w = (kInnerWidthDip - 2.0f * kCardPad - 6.0f) / 2.0f;
           constexpr float kTileH = 44.0f;
           constexpr float kTileGap = 6.0f;
+          constexpr float kRowStride = kTileH + kTileGap;
           const size_t rows = (fg.proxy_indices.size() + 1) / 2;
-          for (size_t i = 0; i < fg.proxy_indices.size(); ++i) {
+          const size_t visible_rows = (std::max)(
+              static_cast<size_t>(1),
+              static_cast<size_t>(std::floor(avail_scroll / kRowStride)) + 1);
+          const size_t unfolding_rows = (std::min)(rows, visible_rows);
+          const float full_body_h = static_cast<float>(rows) * kTileH +
+                                    static_cast<float>(rows - 1) * kTileGap +
+                                    kCardPad;
+          const float unfolding_body_h =
+              static_cast<float>(unfolding_rows) * kTileH +
+              static_cast<float>(unfolding_rows - 1) * kTileGap + kCardPad;
+          const float shown_body_h =
+              settled_expanded ? full_body_h
+                               : (unfolding_body_h * card.unfold_progress);
+          const float tile_shift_y =
+              settled_expanded ? 0.0f : (shown_body_h - unfolding_body_h);
+          const size_t render_count =
+              (settled_expanded || unfolding_rows == rows)
+                  ? fg.proxy_indices.size()
+                  : (std::min)(fg.proxy_indices.size(), unfolding_rows * 2);
+
+          card.body_clip_rect =
+              D2D1::RectF(x0, body_top, x1, body_top + shown_body_h);
+          card.tiles.reserve(render_count);
+          for (size_t i = 0; i < render_count; ++i) {
             const size_t row = i / 2;
             const size_t col = i % 2;
-            const float tx = x0 + kCardPad + static_cast<float>(col) *
-                                                 (tile_w + kTileGap);
+            const float tx = x0 + kCardPad +
+                             static_cast<float>(col) * (tile_w + kTileGap);
             const float ty =
-                tiles_top + static_cast<float>(row) * (kTileH + kTileGap);
+                body_top + static_cast<float>(row) * kRowStride + tile_shift_y;
             ProxyTileLayout tile;
             tile.group_index = fg.group_index;
             tile.proxy_index = fg.proxy_indices[i];
             tile.rect = D2D1::RectF(tx, ty, tx + tile_w, ty + kTileH);
             tile.hit_key = MakeHitKey(static_cast<int>(HitKind::kProxyTile),
                                       fg.group_index, tile.proxy_index);
-            layout_.hits.push_back({tile.hit_key, HitKind::kProxyTile,
-                                    tile.rect, true, true, fg.group_index,
-                                    tile.proxy_index});
+            const float hit_top =
+                (std::max)(tile.rect.top, card.body_clip_rect.top);
+            const float hit_bottom =
+                (std::min)(tile.rect.bottom, card.body_clip_rect.bottom);
+            if (hit_bottom > hit_top + 1.0f) {
+              layout_.hits.push_back(
+                  {tile.hit_key, HitKind::kProxyTile,
+                   D2D1::RectF(tile.rect.left, hit_top, tile.rect.right,
+                               hit_bottom),
+                   true, true, fg.group_index, tile.proxy_index});
+            }
             card.tiles.push_back(tile);
           }
-          card_bottom = tiles_top + static_cast<float>(rows) * kTileH +
-                        static_cast<float>(rows - 1) * kTileGap + kCardPad;
+          card_bottom = body_top + shown_body_h;
         }
         card.card_rect = D2D1::RectF(x0, card_top, x1, card_bottom);
 
         layout_.hits.push_back(
             {card.test_key, HitKind::kGroupTestDelay, card.test_rect,
-             !state_.groups[fg.group_index].testing, true, fg.group_index, 0});
+             !group.testing, true, fg.group_index, 0});
         layout_.hits.push_back({card.header_key, HitKind::kGroupHeader,
                                 card.header_rect, true, true, fg.group_index,
                                 0});
@@ -1238,8 +1440,6 @@ void TrayPanelWindow::RebuildLayout() {
       }
 
       layout_.groups_content_height_dip = content_y - y;
-      const float avail_scroll = (std::max)(
-          44.0f, layout_.max_panel_height_dip - y - kFooterReservedDip);
       const float viewport_h = (std::min)(
           (std::max)(44.0f, layout_.groups_content_height_dip), avail_scroll);
       layout_.groups_viewport_rect = D2D1::RectF(x0, y, x1, y + viewport_h);
@@ -1402,13 +1602,36 @@ void TrayPanelWindow::DispatchHit(const HitTarget& hit) {
       break;
     case HitKind::kGroupHeader:
       if (hit.group_index < state_.groups.size()) {
+        bool is_force_expanded = false;
+        for (const auto& fg : filtered_groups_) {
+          if (fg.group_index == hit.group_index) {
+            is_force_expanded = fg.force_expanded;
+            break;
+          }
+        }
+        if (is_force_expanded) {
+          break;
+        }
         const std::string& name = state_.groups[hit.group_index].name_utf8;
+        bool will_expand = false;
         if (expanded_groups_.count(name) > 0) {
           expanded_groups_.erase(name);
         } else {
           expanded_groups_.insert(name);
+          will_expand = true;
         }
-        ApplyLocalLayoutChange(false);
+        StartGroupUnfold(name, will_expand);
+        RebuildFilteredGroups();
+        RebuildLayout();
+        ClampScroll();
+        if (height_anim_active_) {
+          anim_target_height_dip_ = layout_.panel_height_dip;
+        }
+        UpdateWindowSizeIfVisible();
+        SyncTimers();
+        if (hwnd_ != nullptr) {
+          ::InvalidateRect(hwnd_, nullptr, FALSE);
+        }
       }
       break;
     case HitKind::kGroupTestDelay:
@@ -2061,8 +2284,9 @@ void TrayPanelWindow::DrawGroupCard(const GroupCardLayout& card,
                                     const TrayPanelGroup& group,
                                     bool interactive) {
   const auto& t = state_.theme;
-  const bool header_hovered =
-      interactive && !card.expanded && hovered_key_ == card.header_key;
+  const bool header_hovered = interactive && !card.expanded &&
+                              !card.animating &&
+                              hovered_key_ == card.header_key;
   DrawRoundedCard(card.card_rect, 14.0f,
                   header_hovered ? t.block_bg : t.card_bg);
 
@@ -2139,20 +2363,52 @@ void TrayPanelWindow::DrawGroupCard(const GroupCardLayout& card,
   const float ccx = (card.chevron_rect.left + card.chevron_rect.right) * 0.5f;
   const float ccy = (card.chevron_rect.top + card.chevron_rect.bottom) * 0.5f;
   brush_->SetColor(ColorFromArgb(t.on_surface_variant));
-  if (card.expanded) {
-    render_target_->DrawLine(D2D1::Point2F(ccx - 3.5f, ccy - 1.5f),
-                             D2D1::Point2F(ccx, ccy + 2.0f), brush_.Get(),
-                             1.5f);
-    render_target_->DrawLine(D2D1::Point2F(ccx, ccy + 2.0f),
-                             D2D1::Point2F(ccx + 3.5f, ccy - 1.5f),
-                             brush_.Get(), 1.5f);
-  } else {
-    render_target_->DrawLine(D2D1::Point2F(ccx - 1.5f, ccy - 3.5f),
-                             D2D1::Point2F(ccx + 2.0f, ccy), brush_.Get(),
-                             1.5f);
-    render_target_->DrawLine(D2D1::Point2F(ccx + 2.0f, ccy),
-                             D2D1::Point2F(ccx - 1.5f, ccy + 3.5f),
-                             brush_.Get(), 1.5f);
+  D2D1_MATRIX_3X2_F saved_transform{};
+  render_target_->GetTransform(&saved_transform);
+  render_target_->SetTransform(
+      D2D1::Matrix3x2F::Rotation(90.0f * card.unfold_progress,
+                                 D2D1::Point2F(ccx, ccy)) *
+      saved_transform);
+  render_target_->DrawLine(D2D1::Point2F(ccx - 1.5f, ccy - 3.5f),
+                           D2D1::Point2F(ccx + 2.0f, ccy), brush_.Get(), 1.5f);
+  render_target_->DrawLine(D2D1::Point2F(ccx + 2.0f, ccy),
+                           D2D1::Point2F(ccx - 1.5f, ccy + 3.5f), brush_.Get(),
+                           1.5f);
+  render_target_->SetTransform(saved_transform);
+
+  if (card.tiles.empty()) {
+    return;
+  }
+
+  if (card.animating) {
+    if (card.body_clip_rect.bottom <= card.body_clip_rect.top + 0.5f) {
+      return;
+    }
+    ComPtr<ID2D1RoundedRectangleGeometry> card_mask;
+    const bool use_layer =
+        clip_layer_ &&
+        SUCCEEDED(d2d_factory_->CreateRoundedRectangleGeometry(
+            D2D1::RoundedRect(card.card_rect, 14.0f, 14.0f),
+            card_mask.GetAddressOf()));
+    if (use_layer) {
+      render_target_->PushLayer(
+          D2D1::LayerParameters(card.body_clip_rect, card_mask.Get()),
+          clip_layer_.Get());
+    } else {
+      render_target_->PushAxisAlignedClip(card.body_clip_rect,
+                                          D2D1_ANTIALIAS_MODE_ALIASED);
+    }
+    for (const auto& tile : card.tiles) {
+      if (tile.proxy_index < group.proxies.size()) {
+        DrawProxyTile(tile, group.proxies[tile.proxy_index], interactive);
+      }
+    }
+    if (use_layer) {
+      render_target_->PopLayer();
+    } else {
+      render_target_->PopAxisAlignedClip();
+    }
+    return;
   }
 
   for (const auto& tile : card.tiles) {
@@ -2650,13 +2906,14 @@ LRESULT TrayPanelWindow::HandleMessage(HWND hwnd,
           anim_timer_running_ = false;
           return 0;
         }
-        const bool was_height_anim = height_anim_active_;
+        const bool had_size_anim =
+            height_anim_active_ || HasActiveGroupUnfolds();
         StepAnimationsAt(::GetTickCount64());
         if (!HasActiveAnimations()) {
           ::KillTimer(hwnd, kAnimTimerId);
           anim_timer_running_ = false;
         }
-        if (was_height_anim || height_anim_active_) {
+        if (had_size_anim || height_anim_active_ || HasActiveGroupUnfolds()) {
           UpdateWindowSizeIfVisible();
         }
         ::InvalidateRect(hwnd, nullptr, FALSE);

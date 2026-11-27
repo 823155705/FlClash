@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import QuartzCore
 import SwiftUI
 
 struct TrayPanelTheme: Equatable {
@@ -475,16 +477,155 @@ struct TrayPanelTraffic: Equatable {
     }
 }
 
+struct UnfoldSpringState {
+    // Matches prism_ui UnfoldMotion (iOS UICollectionView outline disclosure).
+    static let mass: Double = 1.0
+    static let stiffness: Double = 631.65
+    static let damping: Double = 50.27
+    static let distanceTolerance: Double = 1e-3
+    static let velocityTolerance: Double = 0.03
+
+    private static let root: Double = sqrt(damping * damping - 4.0 * mass * stiffness)
+    private static let r1: Double = (-damping + root) / (2.0 * mass)
+    private static let r2: Double = (-damping - root) / (2.0 * mass)
+
+    var target: Double
+    var startTime: CFTimeInterval
+    var c1: Double
+    var c2: Double
+    var value: Double
+    var velocity: Double
+
+    init(from startValue: Double, velocity startVelocity: Double, target: Double, at now: CFTimeInterval) {
+        self.target = target
+        self.startTime = now
+        let y0 = startValue - target
+        self.c2 = (startVelocity - Self.r1 * y0) / (Self.r2 - Self.r1)
+        self.c1 = y0 - self.c2
+        self.value = startValue
+        self.velocity = startVelocity
+    }
+
+    var clampedProgress: CGFloat {
+        CGFloat(min(max(value, 0.0), 1.0))
+    }
+
+    mutating func step(at now: CFTimeInterval) -> Bool {
+        let elapsed = max(0.0, now - startTime)
+        let e1 = exp(Self.r1 * elapsed)
+        let e2 = exp(Self.r2 * elapsed)
+        let displacement = c1 * e1 + c2 * e2
+        let nextVelocity = c1 * Self.r1 * e1 + c2 * Self.r2 * e2
+        if elapsed >= 1.5
+            || (abs(displacement) <= Self.distanceTolerance && abs(nextVelocity) <= Self.velocityTolerance)
+        {
+            value = target
+            velocity = 0.0
+            return true
+        }
+        value = target + displacement
+        velocity = nextVelocity
+        return false
+    }
+}
+
+private final class UnfoldFrameTicker: NSObject {
+    var onTick: ((CFTimeInterval) -> Void)?
+
+    private weak var displayWindow: NSWindow?
+    private var displayLink: AnyObject?
+    private var fallbackTimer: Timer?
+
+    deinit {
+        stop()
+    }
+
+    func attach(window: NSWindow?) {
+        displayWindow = window
+    }
+
+    var isRunning: Bool {
+        displayLink != nil || fallbackTimer != nil
+    }
+
+    func start() {
+        guard !isRunning else {
+            return
+        }
+        if #available(macOS 14.0, *) {
+            if let link = displayWindow?.displayLink(target: self, selector: #selector(handleDisplayLink(_:)))
+                ?? NSScreen.main?.displayLink(target: self, selector: #selector(handleDisplayLink(_:)))
+            {
+                link.add(to: .main, forMode: .common)
+                displayLink = link
+                return
+            }
+        }
+        let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in
+            self?.onTick?(CACurrentMediaTime())
+        }
+        timer.tolerance = 0
+        RunLoop.main.add(timer, forMode: .common)
+        fallbackTimer = timer
+    }
+
+    func stop() {
+        if #available(macOS 14.0, *), let link = displayLink as? CADisplayLink {
+            link.invalidate()
+        }
+        displayLink = nil
+        fallbackTimer?.invalidate()
+        fallbackTimer = nil
+    }
+
+    @objc private func handleDisplayLink(_ sender: AnyObject) {
+        onTick?(CACurrentMediaTime())
+    }
+}
+
 final class TrayPanelStore: ObservableObject {
     @Published private(set) var state: TrayPanelState = .fallback
     @Published private(set) var traffic: TrayPanelTraffic = .empty
     @Published var expandedGroupNames: Set<String> = []
+    @Published private(set) var groupUnfoldProgress: [String: CGFloat] = [:]
     @Published var isSearchVisible: Bool = false
     @Published var searchQuery: String = ""
     @Published private(set) var copiedFeedback: Bool = false
     @Published var maxPanelHeight: CGFloat = 600
 
+    var onUnfoldAnimationSettled: (() -> Void)?
+
     private var copiedResetWorkItem: DispatchWorkItem?
+    private var unfoldSprings: [String: UnfoldSpringState] = [:]
+    private let unfoldTicker = UnfoldFrameTicker()
+
+    init() {
+        unfoldTicker.onTick = { [weak self] now in
+            self?.stepUnfoldAnimations(at: now)
+        }
+    }
+
+    deinit {
+        unfoldTicker.stop()
+    }
+
+    var isAnyGroupUnfolding: Bool {
+        !unfoldSprings.isEmpty
+    }
+
+    func attachDisplayWindow(_ window: NSWindow?) {
+        unfoldTicker.attach(window: window)
+    }
+
+    func unfoldState(for groupName: String, forceExpand: Bool) -> (progress: CGFloat, isAnimating: Bool) {
+        if forceExpand {
+            return (1, false)
+        }
+        if let spring = unfoldSprings[groupName] {
+            return (spring.clampedProgress, true)
+        }
+        return (expandedGroupNames.contains(groupName) ? 1 : 0, false)
+    }
 
     func updateState(from dict: [String: Any]) {
         let next = TrayPanelState(from: dict)
@@ -494,17 +635,101 @@ final class TrayPanelStore: ObservableObject {
         state = next
         let validNames = Set(next.groups.map(\.name))
         expandedGroupNames.formIntersection(validNames)
+        pruneUnfoldSprings(validNames: validNames)
     }
 
     func updateTraffic(from dict: [String: Any]) {
         traffic = TrayPanelTraffic(from: dict)
     }
 
-    func toggleGroup(_ name: String) {
+    func toggleGroup(
+        _ name: String,
+        animate: Bool? = nil,
+        at now: CFTimeInterval = CACurrentMediaTime(),
+        autoTick: Bool = true
+    ) {
+        let willExpand: Bool
         if expandedGroupNames.contains(name) {
             expandedGroupNames.remove(name)
+            willExpand = false
         } else {
             expandedGroupNames.insert(name)
+            willExpand = true
+        }
+
+        let shouldAnimate = animate ?? !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        guard shouldAnimate else {
+            unfoldSprings.removeValue(forKey: name)
+            groupUnfoldProgress.removeValue(forKey: name)
+            if unfoldSprings.isEmpty {
+                unfoldTicker.stop()
+            }
+            return
+        }
+
+        let target = willExpand ? 1.0 : 0.0
+        var startValue = willExpand ? 0.0 : 1.0
+        var startVelocity = 0.0
+        if var existing = unfoldSprings[name] {
+            _ = existing.step(at: now)
+            startValue = existing.value
+            startVelocity = existing.velocity
+        }
+
+        let spring = UnfoldSpringState(
+            from: startValue,
+            velocity: startVelocity,
+            target: target,
+            at: now
+        )
+        unfoldSprings[name] = spring
+        groupUnfoldProgress[name] = spring.clampedProgress
+        if autoTick {
+            unfoldTicker.start()
+        }
+    }
+
+    func stepUnfoldAnimations(at now: CFTimeInterval = CACurrentMediaTime()) {
+        guard !unfoldSprings.isEmpty else {
+            unfoldTicker.stop()
+            return
+        }
+
+        var nextProgress = groupUnfoldProgress
+        var settledNames: [String] = []
+        for name in Array(unfoldSprings.keys) {
+            guard var spring = unfoldSprings[name] else {
+                continue
+            }
+            let done = spring.step(at: now)
+            if done {
+                settledNames.append(name)
+            } else {
+                unfoldSprings[name] = spring
+                nextProgress[name] = spring.clampedProgress
+            }
+        }
+        for name in settledNames {
+            unfoldSprings.removeValue(forKey: name)
+            nextProgress.removeValue(forKey: name)
+        }
+        groupUnfoldProgress = nextProgress
+
+        if unfoldSprings.isEmpty {
+            unfoldTicker.stop()
+            onUnfoldAnimationSettled?()
+        }
+    }
+
+    func snapUnfoldAnimations() {
+        let hadActive = !unfoldSprings.isEmpty
+        unfoldTicker.stop()
+        unfoldSprings.removeAll()
+        if !groupUnfoldProgress.isEmpty {
+            groupUnfoldProgress.removeAll()
+        }
+        if hadActive {
+            onUnfoldAnimationSettled?()
         }
     }
 
@@ -532,7 +757,22 @@ final class TrayPanelStore: ObservableObject {
         isSearchVisible = false
         searchQuery = ""
         expandedGroupNames.removeAll()
+        unfoldTicker.stop()
+        unfoldSprings.removeAll()
+        groupUnfoldProgress.removeAll()
         state = .fallback
         traffic = .empty
+    }
+
+    private func pruneUnfoldSprings(validNames: Set<String>) {
+        guard !unfoldSprings.isEmpty else {
+            return
+        }
+        unfoldSprings = unfoldSprings.filter { validNames.contains($0.key) }
+        groupUnfoldProgress = groupUnfoldProgress.filter { validNames.contains($0.key) }
+        if unfoldSprings.isEmpty {
+            unfoldTicker.stop()
+            onUnfoldAnimationSettled?()
+        }
     }
 }
